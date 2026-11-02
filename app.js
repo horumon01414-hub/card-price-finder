@@ -200,14 +200,14 @@ $('scanDetail').onclick=async()=>{
 
 // v2.0: 端末内の手動登録データだけを使った比較。外部サイトを自動取得しない。
 function comparisonSearchUrl(name,card){
+  // Always open a Google results page. Do not depend on outdated shop domains or guessed product URLs.
   const no=String(card?.cardNo||'').normalize('NFKC').replace(/[\s　]+/g,'').replace(/／/g,'/');
-  const term=no||String(card?.name||'').trim();
-  const fixed=shopNames.find(x=>x[0]===name);
-  if(fixed)return fixed[1]+encodeURIComponent(term);
-  const custom=(data.customOnlineShops||[]).find(x=>x.name===name);
-  // Custom shop: use a domain-restricted search, never fabricate a site's own search URL.
-  if(custom?.url){try{const u=new URL(custom.url);if(['https:','http:'].includes(u.protocol))return 'https://www.google.com/search?q='+encodeURIComponent('site:'+u.hostname+' '+term);}catch(e){}}
-  return 'https://www.google.com/search?q='+encodeURIComponent('ヴァンガード '+name+' '+term);
+  const cardName=String(card?.name||'').trim();
+  const rarity=String(card?.rarity||'').trim();
+  const words=['ヴァンガード',name,no||cardName];
+  if(no&&cardName)words.push(cardName);
+  if(rarity)words.push(rarity);
+  return 'https://www.google.com/search?q='+encodeURIComponent(words.filter(Boolean).join(' '));
 }
 function renderShopComparison(){
   const target=$('shopCompareTable');
