@@ -29,13 +29,9 @@ const shopNames=[['カードラッシュ','https://www.google.com/search?q=site%
 function renderLinks(){let c=getCard($('compareTarget').value),term=c?(c.cardNo||c.name):'';let mk=(name,url)=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(name)} ↗</a>`;$('shopLinks').innerHTML=shopNames.map(([n,p])=>mk(n,p+encodeURIComponent(term))).join('');$('marketLinks').innerHTML=mk('楽天市場','https://search.rakuten.co.jp/search/mall/'+encodeURIComponent('ヴァンガード '+term)+'/')+mk('Amazon','https://www.amazon.co.jp/s?k='+encodeURIComponent('ヴァンガード '+term));}
 $('compareTarget').onchange=renderLinks;
 $('mercariSearch').onclick=()=>{let c=getCard($('mercariTarget').value);if(!c)return alert('カードを登録してください');window.open('https://jp.mercari.com/search?keyword='+encodeURIComponent(c.name)+'&status=sold_out','_blank','noopener')};
-function parsePrices(text){let lines=text.split(/\n/).map(x=>x.trim()).filter(Boolean),out=[];for(let i=0;i<lines.length;i++){let m=lines[i].match(/(?:[¥￥]\s*|(?<![\d])(?:価格|税込)\s*[:：]?\s*)([\d,]{2,8})/);if(!m)continue;let p=Number(m[1].replaceAll(',',''));if(p<10||p>10000000)continue;let title=[lines[i-1]||'',lines[i],lines[i+1]||''].join(' / ').slice(0,160);out.push({id:uid(),price:p,title,include:true,source:'OCR',fingerprint:title.replace(/\s/g,'').toLowerCase()})}return out}
-function detectFlags(item,card){let flags=[];let related=data.sold.filter(x=>x.cardId===card?.id&&x.include&&Number(x.price)>0).map(x=>Number(x.price));let base=median(related);if(base&&item.price>base*3)flags.push('高額な外れ値の可能性');if(base&&item.price<base/3)flags.push('低額な外れ値の可能性（自動除外しません）');let t=item.title||'';if(/買取|買取表|高価買取/.test(t))flags.push('買取情報の可能性');if(/まとめ|セット|[2-9０-９]枚|複数枚|デッキ|BOX|ボックス|パック/.test(t))flags.push('複数枚・セットの可能性');if(card&&card.rarity&&/(RRR|RR|FFR|FR|SP|SEC|SR|T\+)/i.test(t)&&!t.toUpperCase().includes(card.rarity.toUpperCase()))flags.push('別レアリティの可能性');if(card&&card.name&&!t.includes(card.name))flags.push('カード名の一致未確認');return flags}
-$('scanMercari').onclick=async()=>{let files=[...$('mercariFiles').files],c=getCard($('mercariTarget').value);if(!c)return alert('カードを選択してください');if(!files.length)return alert('スクリーンショットを選んでください');if(ocrBusy)return;ocrBusy=true;$('scanMercari').disabled=true;scans=[];for(let i=0;i<files.length;i++){try{$('mercariStatus').textContent=`${i+1}/${files.length} 枚を読み取り中…`;let text=await recognize(files[i]);let entries=parsePrices(text);scans.push({filename:files[i].name,text,entries});}catch(e){scans.push({filename:files[i].name,text:'OCR失敗: '+e.message,entries:[]})}}ocrBusy=false;$('scanMercari').disabled=false;$('mercariStatus').textContent='読み取り完了。候補を確認・修正して保存してください。';renderScans()};
-function renderScans(){let c=getCard($('mercariTarget').value);$('scanResults').innerHTML=scans.map((s,si)=>`<div class="item"><h3>${esc(s.filename)} / 候補${s.entries.length}件</h3><details><summary class="muted">OCR全文を確認</summary><pre style="white-space:pre-wrap;font-size:11px">${esc(s.text)}</pre></details>${s.entries.map((e,ei)=>`<div class="panel"><label>価格（円）</label><input type="number" min="1" data-scan-price="${si}-${ei}" value="${e.price}"><label>商品名・メモ</label><input data-scan-title="${si}-${ei}" value="${esc(e.title)}"><label><input type="checkbox" style="width:auto" data-scan-inc="${si}-${ei}" ${e.include?'checked':''}> 集計に含める</label><div class="flag">${esc(detectFlags(e,c).join(' / '))}</div></div>`).join('')}<div class="actions"><button class="secondary" data-add-row="${si}">候補を1件追加</button></div></div>`).join('')+'<div class="actions"><button id="saveScans">確認した候補を保存</button></div>';
-$('scanResults').querySelectorAll('[data-add-row]').forEach(b=>b.onclick=()=>{scans[Number(b.dataset.addRow)].entries.push({id:uid(),price:0,title:'',include:false,source:'OCR'});renderScans()});$('scanResults').querySelectorAll('[data-scan-price]').forEach(x=>x.oninput=()=>{let [a,b]=x.dataset.scanPrice.split('-').map(Number);scans[a].entries[b].price=Number(x.value)});$('scanResults').querySelectorAll('[data-scan-title]').forEach(x=>x.oninput=()=>{let [a,b]=x.dataset.scanTitle.split('-').map(Number);scans[a].entries[b].title=x.value});$('scanResults').querySelectorAll('[data-scan-inc]').forEach(x=>x.onchange=()=>{let [a,b]=x.dataset.scanInc.split('-').map(Number);scans[a].entries[b].include=x.checked});$('saveScans').onclick=()=>{let id=$('mercariTarget').value;let entries=scans.flatMap(s=>s.entries.map(e=>({...e,cardId:id,created:Date.now(),filename:s.filename}))).filter(e=>e.price>0&&Number.isFinite(e.price));if(!entries.length)return alert('価格が入力された候補がありません');let seen=new Set(data.sold.filter(x=>x.cardId===id).map(x=>x.filename+'|'+x.title+'|'+x.price));let added=0;entries.forEach(e=>{let key=e.filename+'|'+e.title+'|'+e.price;if(!seen.has(key)){data.sold.push(e);seen.add(key);added++}});if(persist()){scans=[];$('scanResults').innerHTML='';$('mercariFiles').value='';alert(added+'件保存しました（同じファイル名・商品名・価格の重複を除外）')}}}
-$('manualAdd').onclick=()=>{let id=$('mercariTarget').value,p=Number($('manualPrice').value);if(!id)return alert('カードを選択してください');if(!Number.isFinite(p)||p<=0)return alert('価格を入力してください');data.sold.push({id:uid(),cardId:id,price:p,title:$('manualTitle').value.trim(),include:true,source:'手動',created:Date.now()});if(persist()){$('manualPrice').value='';$('manualTitle').value=''}};
-function renderSold(){let id=$('mercariTarget').value,rows=data.sold.filter(x=>x.cardId===id),valid=rows.filter(x=>x.include&&Number(x.price)>0).sort((a,b)=>b.created-a.created).slice(0,10),m=median(valid.map(x=>Number(x.price)));$('mercariSummary').innerHTML=`<div class="panel"><h2>販売済み相場</h2><div class="price">${m===null?'データなし':yen(m)}</div><p class="muted">有効 ${valid.length} 件（最大10件の中央値） / 登録 ${rows.length} 件。直近の有効10件を使用します。</p></div>`;$('mercariRecords').innerHTML=rows.slice().reverse().map(e=>`<div class="item"><div class="row"><b>${yen(e.price)}</b><span class="${e.include?'ok':'flag'}">${e.include?'集計対象':'除外中'}</span></div><p class="muted">${esc(e.title||'商品名未確認')} / ${esc(e.source||'手動')}</p><div class="flag">${esc(detectFlags(e,getCard(id)).join(' / '))}</div><div class="actions"><button class="secondary" data-toggle="${esc(e.id)}">${e.include?'除外する':'集計に戻す'}</button><button class="secondary" data-soldedit="${esc(e.id)}">修正</button><button class="danger" data-solddelete="${esc(e.id)}">削除</button></div></div>`).join('');$('mercariRecords').querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{let e=data.sold.find(x=>x.id===b.dataset.toggle);e.include=!e.include;persist()});$('mercariRecords').querySelectorAll('[data-soldedit]').forEach(b=>b.onclick=()=>{let e=data.sold.find(x=>x.id===b.dataset.soldedit);let p=prompt('価格（円）',e.price);if(p===null)return;let n=Number(p);if(!Number.isFinite(n)||n<=0)return alert('正しい価格を入力してください');let t=prompt('商品名・メモ',e.title||'');if(t===null)return;e.price=n;e.title=t;persist()});$('mercariRecords').querySelectorAll('[data-solddelete]').forEach(b=>b.onclick=()=>{if(confirm('このデータを削除しますか？')){data.sold=data.sold.filter(x=>x.id!==b.dataset.solddelete);persist()}})};
+// メルカリは参考価格のメモだけを保存します。画像OCR・自動相場集計は行いません。
+$('manualAdd').onclick=()=>{const id=$('mercariTarget').value,p=Number($('manualPrice').value);if(!id)return alert('カードを選択してください');if(!Number.isFinite(p)||p<=0)return alert('価格を入力してください');data.sold.push({id:uid(),cardId:id,price:p,title:$('manualTitle').value.trim(),source:'手動メモ',created:Date.now()});if(persist()){$('manualPrice').value='';$('manualTitle').value=''}};
+function renderSold(){const id=$('mercariTarget').value,rows=data.sold.filter(x=>x.cardId===id);$('mercariSummary').innerHTML=`<div class="panel"><h2>メルカリ参考メモ</h2><p class="muted">${rows.length}件の手動メモがあります。売却相場の自動算出は行いません。</p></div>`;$('mercariRecords').innerHTML=rows.slice().reverse().map(e=>`<div class="item"><div class="row"><b>${yen(e.price)}</b><span class="muted">${new Date(e.created||Date.now()).toLocaleDateString('ja-JP')}</span></div><p class="muted">${esc(e.title||'メモなし')}</p><div class="actions"><button class="secondary" data-soldedit="${esc(e.id)}">修正</button><button class="danger" data-solddelete="${esc(e.id)}">削除</button></div></div>`).join('');$('mercariRecords').querySelectorAll('[data-soldedit]').forEach(b=>b.onclick=()=>{let e=data.sold.find(x=>x.id===b.dataset.soldedit);let p=prompt('参考価格（円）',e.price);if(p===null)return;let n=Number(p);if(!Number.isFinite(n)||n<=0)return alert('正しい価格を入力してください');let t=prompt('メモ',e.title||'');if(t===null)return;e.price=n;e.title=t;persist()});$('mercariRecords').querySelectorAll('[data-solddelete]').forEach(b=>b.onclick=()=>{if(confirm('このメモを削除しますか？')){data.sold=data.sold.filter(x=>x.id!==b.dataset.solddelete);persist()}})};
 $('mercariTarget').onchange=renderSold;
 $('savePrice').onclick=()=>{let id=$('priceTarget').value,p=Number($('price').value);if(!id||!Number.isFinite(p)||p<0||$('price').value==='')return alert('カードと価格を入力してください');data.prices.push({id:uid(),cardId:id,kind:$('kind').value,source:$('sourceName').value.trim(),price:p,shipping:Number($('shipping').value)||0,stock:$('stock').value,condition:$('condition').value,note:$('itemNote').value,url:$('url').value,created:Date.now()});if(persist())$('price').value=''};
 function renderPrices(){let id=$('compareTarget').value,rows=data.prices.filter(x=>x.cardId===id),online=rows.filter(x=>x.kind==='online'),best=online.filter(x=>x.stock!=='売り切れ').sort((a,b)=>(Number(a.price)+Number(a.shipping))-(Number(b.price)+Number(b.shipping)))[0];$('priceSummary').innerHTML=`<div class="panel"><h2>登録済み通販価格</h2><div class="price">${best?yen(Number(best.price)+Number(best.shipping)):'データなし'}</div><p class="muted">手動登録の送料込み参考最安値。在庫数・必要枚数は未照合です。</p></div>`;$('priceRecords').innerHTML=rows.slice().reverse().map(p=>`<div class="item"><div class="row"><b>${esc(p.source||'名称なし')}</b><b class="gold">${yen(Number(p.price)+Number(p.shipping))}</b></div><p class="muted">${esc(p.kind)} / 在庫: ${esc(p.stock||'不明')} / ${esc(p.note||'')}</p><div class="actions">${/^https?:\/\//.test(p.url||'')?`<a class="btn secondary" href="${esc(p.url)}" target="_blank" rel="noopener">商品ページ</a>`:''}<button class="danger" data-price-del="${esc(p.id)}">削除</button></div></div>`).join('');$('priceRecords').querySelectorAll('[data-price-del]').forEach(b=>b.onclick=()=>{if(confirm('価格情報を削除しますか？')){data.prices=data.prices.filter(p=>p.id!==b.dataset.priceDel);persist()}})};
@@ -54,35 +50,38 @@ async function recognize(source){
  const result=await ocrWorker.recognize(source);
  return result.data.text||'';
 }
-function detailRegion(img,x,y,w,h){const c=document.createElement('canvas');const sw=img.naturalWidth,sh=img.naturalHeight;c.width=Math.round(sw*w*2);c.height=Math.round(sh*h*2);const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(img,sw*x,sh*y,sw*w,sh*h,0,0,c.width,c.height);return c;}
-function extractDetail(nameText,codeText,fullText){
- const clean=t=>t.replace(/[\u200b-\u200d]/g,'').trim();
- let names=nameText.split(/\n/).map(clean).filter(Boolean).filter(t=>!/^(カードリスト|カード詳細|ヴァンガード|検索|MENU|カードファイト)/i.test(t));
- let name=names.find(t=>/[\u3040-\u30ff\u3400-\u9fff]/.test(t)&&t.length>=3&&!/^(その他|グレード|パワー|クリティカル|シールド)/.test(t))||'';
- name=name.replace(/[（(][^）)]{1,30}[）)]\s*$/,'').replace(/[|｜].*$/,'').trim();
- let merged=(codeText+'\n'+fullText).toUpperCase().replace(/[‐‑–—−]/g,'-');
- let m=merged.match(/(?:DZ|D|V|G|BT|PR|P|TD|EB|CP|T)[-\s]?[A-Z0-9]{1,12}\s*\/\s*[A-Z0-9+\-]{2,12}/i);
- let cardNo=m?m[0].replace(/\s/g,''):'';
- let rarity='';
- const codeLine=merged.split('\n').find(l=>cardNo&&l.replace(/\s/g,'').includes(cardNo))||'';
- let r=codeLine.match(/(?:^|[|｜\s])(?:T\+|RRRR|RRR|RR|R|C|FFR|FR|SR|SEC|SP|PR)(?=$|[|｜\s])/i);
- if(r)rarity=r[0].trim();
- return {name,cardNo,rarity};
+// 固定座標を使わず、公式ページの項目ラベルとOCR文字列の並びで抽出します。
+function extractDetail(fullText){
+ const lines=fullText.split(/\n/).map(t=>t.replace(/[｜|]/g,' ').replace(/\s+/g,' ').trim()).filter(Boolean);
+ const ignore=/^(?:カードリスト|カード詳細|カード検索|検索|MENU|メニュー|HOME|ホーム|ログイン|カードファイト|ヴァンガード|公式サイト|戻る|前へ|次へ|画像|カード画像|カード名|カード情報|スタンダード|デッキ|商品情報|レギュレーション|レアリティ|カード番号)$/i;
+ const codePattern=/(?:DZ|D|V|G|BT|PR|P|TD|EB|CP|T)[-－][A-Z0-9+\-]{2,18}\s*\/\s*[A-Z0-9+\-]{1,15}/i;
+ const codeNormalize=t=>t.toUpperCase().replace(/[‐‑–—−－]/g,'-').replace(/\s*\/\s*/g,'/');
+ const normalized=lines.map(codeNormalize);
+ let code='',rarity='';
+ // 「スタンダード」の直後にあるカード番号と、その右のレアリティを優先する。
+ let standardIndex=lines.findIndex(t=>/スタンダード/.test(t));
+ let candidates=[];
+ if(standardIndex>=0)candidates=[...normalized.slice(standardIndex,standardIndex+4)];
+ candidates.push(...normalized);
+ for(const line of candidates){let m=line.match(codePattern);if(m){code=m[0].replace(/\s/g,'');const right=line.slice(m.index+m[0].length);let r=right.match(/(?:^|\s|[:：])\s*(T\+|RRRR|RRR|RR|R|C|FFR|FR|SR|SEC|SP|PR|ORR|DSR|EXRR|EX)(?=\s|$|[）)])/i);if(r)rarity=r[1].toUpperCase();break}}
+ if(!rarity&&code){const idx=normalized.findIndex(l=>l.includes(code));const after=idx>=0?normalized.slice(idx+1,idx+3).join(' '):'';const m=after.match(/^(?:レアリティ\s*[:：]?\s*)?(T\+|RRRR|RRR|RR|R|C|FFR|FR|SR|SEC|SP|PR|ORR|DSR|EXRR|EX)(?=\s|$)/i);if(m)rarity=m[1].toUpperCase()}
+ // OCRで読めた文章の最初のカード名候補を優先。ナビゲーションと項目名は除外。
+ const candidatesName=lines.map(t=>t.replace(/^カード名\s*[:：]\s*/,'').trim()).filter(t=>t&&!ignore.test(t)&&/[ぁ-んァ-ヶ一-龠]/.test(t)&&t.length>=2&&!/^(?:スタンダード|カード番号|レアリティ|グレード|パワー|シールド|クリティカル|国家|種族|効果|テキスト|収録|商品|発売|価格|イラスト|カードリスト)/.test(t)&&!codePattern.test(codeNormalize(t))&&!/https?:|www\.|©|Copyright/i.test(t));
+ let name=candidatesName[0]||'';
+ name=name.replace(/\s*[（(][^）)]{1,30}[）)]\s*$/,'').trim();
+ return {name,cardNo:code,rarity};
 }
 $('scanDetail').onclick=async()=>{
  const file=$('detailFile').files[0];if(!file)return alert('公式サイトの詳細画面スクリーンショットを選択してください');
- const btn=$('scanDetail');btn.disabled=true;$('detailStatus').textContent='OCRの準備・読み取り中です。初回は言語データのダウンロードに時間がかかります…';
+ const btn=$('scanDetail');btn.disabled=true;$('detailStatus').textContent='詳細画面の文字列を解析しています…';
  try{
-  const img=await loadImage(file);
-  // Site title is near upper-middle, and card code/rarity near the bottom.
-  const title=await recognize(detailRegion(img,.20,.215,.66,.080));
-  const code=await recognize(detailRegion(img,.02,.60,.96,.20));
-  const parsed=extractDetail(title,code,title+'\n'+code);
+  const fullText=await recognize(file);
+  const parsed=extractDetail(fullText);
   if(parsed.name)$('cardName').value=parsed.name;
   if(parsed.cardNo)$('cardNo').value=parsed.cardNo;
   if(parsed.rarity)$('rarity').value=parsed.rarity;
-  $('detailText').textContent='【カード名領域】\n'+title+'\n【カード番号領域】\n'+code;
+  $('detailText').textContent='【読み取り全文】\n'+fullText;
   $('detailDebug').classList.remove('hidden');
-  $('detailStatus').textContent=`候補：名前 ${parsed.name||'未検出'} / 番号 ${parsed.cardNo||'未検出'} / レアリティ ${parsed.rarity||'未検出'}。必ず確認・修正して保存してください。`;
+  $('detailStatus').textContent=`候補：名前 ${parsed.name||'未検出'} / 番号 ${parsed.cardNo||'未検出'} / レアリティ ${parsed.rarity||'未検出'}。必ず確認・修正してください。`;
  }catch(e){$('detailStatus').textContent='読み取り失敗：'+e.message+'。手入力で登録できます。'}finally{btn.disabled=false}
 };
