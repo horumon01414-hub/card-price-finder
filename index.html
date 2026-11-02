@@ -41,10 +41,10 @@ button{border:0;border-radius:10px;padding:11px 13px;font:inherit;font-size:13px
 <div class="panel">
 <h2>欲しいカードを登録</h2>
 <div class="grid">
-<div class="wide"><label>カード名</label><input id="cardName" placeholder="カード名を入力"></div>
-<div><label>カードゲーム</label><select id="game"><option>遊戯王</option><option>ポケモンカード</option><option>ヴァンガード</option><option>デジモンカード</option><option>ワンピースカード</option><option>ユニオンアリーナ</option></select></div>
+<div class="wide"><label>カード名（略称でも入力可）</label><input id="cardName" placeholder="例：ブラスター・ブレード"><div class="actions"><button type="button" class="secondary" id="officialSearch">公式カード検索を開く</button></div><p class="muted">公式サイトで正式名称・番号・レアリティを確認して入力してください。公式データの候補自動取得は未対応です。</p></div>
+<div><label>対応タイトル</label><select id="game"><option>ヴァンガード</option></select></div>
 <div><label>優先度</label><select id="priority"><option>高</option><option selected>中</option><option>低</option></select></div>
-<div><label>カード番号・型番</label><input id="cardNo" placeholder="例：ABC-JP001"></div>
+<div><label>カード番号・型番</label><input id="cardNo" placeholder="例：D-BT01/001"></div>
 <div><label>希望レアリティ</label><input id="rarity" placeholder="例：最低レアリティ"></div>
 <div class="wide"><label>補足（版・絵柄など）</label><input id="version" placeholder="通常版、再録版など"></div>
 </div>
@@ -81,9 +81,12 @@ button{border:0;border-radius:10px;padding:11px 13px;font:inherit;font-size:13px
 <div class="panel">
 <h2>相場・価格比較</h2>
 <label>対象カード</label><select id="compareTarget"></select>
-<div id="summary"></div>
+<div class="actions"><button type="button" class="secondary" id="onlineSearch">通販を番号で検索</button><button type="button" class="secondary" id="mercariSearch">メルカリを名前で検索</button></div><p class="muted">外部検索ページを開きます。価格の自動取得はまだ未対応です。</p><div id="summary"></div>
 </div>
-<div id="records"></div>
+<div class="panel"><h2>メルカリ販売済みスクショ（確認用）</h2>
+<p class="muted">複数枚をまとめて選択できます。画像はこの画面で確認できますが、文字・価格の自動読み取りはまだ未実装です。価格は「価格を登録」から入力してください。画像は保存・送信されません。</p>
+<input id="screenshots" type="file" accept="image/*" multiple>
+<div id="shotPreview" class="grid"></div></div><div id="records"></div>
 </section>
 
 <section id="settings" class="view hidden">
@@ -100,7 +103,7 @@ button{border:0;border-radius:10px;padding:11px 13px;font:inherit;font-size:13px
 </div>
 </section>
 </main>
-<footer>CARD PRICE FINDER ・ 試作版 v0.2</footer>
+<footer>CARD PRICE FINDER ・ v0.4 プレビュー（段階実装）</footer>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -182,6 +185,32 @@ $('addShop').addEventListener('click',()=>{const n=$('newShop').value.trim();if(
 $('export').addEventListener('click',()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='card-price-finder-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
 $('importBtn').addEventListener('click',()=>$('importFile').click());
 $('importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.cards)||!Array.isArray(d.prices)||!Array.isArray(d.shops))throw new Error('invalid');if(!confirm('現在のデータを読み込んだ内容に置き換えますか？'))return;data=d;save();alert('読み込みました')}catch(_){alert('バックアップを読み込めませんでした')}e.target.value=''});
+const officialUrl='https://cf-vanguard.com/cardlist/';
+$('officialSearch').addEventListener('click',()=>window.open(officialUrl,'_blank','noopener'));
+function currentCard(){return getCard($('compareTarget').value)}
+$('onlineSearch').addEventListener('click',()=>{
+ const c=currentCard();if(!c)return alert('カードを選択してください');
+ const q=c.cardNo||c.name;
+ if(!q)return alert('カード番号かカード名を登録してください');
+ window.open('https://www.google.com/search?q='+encodeURIComponent('ヴァンガード '+q+' カードラッシュ カードラボ 通販'),'_blank','noopener');
+});
+$('mercariSearch').addEventListener('click',()=>{
+ const c=currentCard();if(!c)return alert('カードを選択してください');
+ window.open('https://jp.mercari.com/search?keyword='+encodeURIComponent('ヴァンガード '+c.name)+'&status=sold_out','_blank','noopener');
+});
+let shotUrls=[];
+$('screenshots').addEventListener('change',e=>{
+ shotUrls.forEach(u=>URL.revokeObjectURL(u));shotUrls=[];
+ const files=Array.from(e.target.files).filter(f=>f.type.startsWith('image/')).slice(0,30);
+ $('shotPreview').innerHTML='';
+ files.forEach((f,i)=>{
+  const url=URL.createObjectURL(f);shotUrls.push(url);
+  const wrapper=document.createElement('div');wrapper.className='entry';
+  const img=document.createElement('img');img.src=url;img.alt='スクリーンショット '+(i+1);img.style.cssText='width:100%;height:auto;border-radius:8px';
+  const caption=document.createElement('div');caption.className='muted';caption.textContent=f.name;
+  wrapper.append(img,caption);$('shotPreview').append(wrapper);
+ });
+});
 setKind();render();
 </script>
 <script>if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});</script>
