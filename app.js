@@ -12,9 +12,9 @@ const getCard=id=>data.cards.find(c=>c.id===id);
 function tab(id){document.querySelectorAll('.view').forEach(e=>e.classList.toggle('hidden',e.id!==id));document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active',e.dataset.tab===id));}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 function options(id,old){let e=$(id);e.innerHTML=data.cards.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} ${esc(c.rarity||'')}</option>`).join('');if(old&&data.cards.some(c=>c.id===old))e.value=old}
-function render(){const sels=['mercariTarget','compareTarget','priceTarget','marketTarget','overallTarget','memoCard'];sels.forEach(id=>options(id,$(id).value));$('cardList').innerHTML=data.cards.length?data.cards.map(c=>`<div class="item"><div class="cardrow">${c.image?`<img class="thumb" src="${c.image}" alt="カード画像">`:'<div class="thumb"></div>'}<div style="min-width:0;flex:1"><div class="name">${esc(c.name)}</div><div class="muted">${esc(c.cardNo||'番号未登録')} / ${esc(c.rarity||'レアリティ未登録')}</div><div class="chip">必要 ${Number(c.wanted)||1} 枚</div> <span class="chip">${esc(c.priority||'中')}</span><div class="muted">${esc(c.version||'')}</div></div></div><div class="actions"><button class="secondary" data-edit="${esc(c.id)}">編集</button><button class="secondary" data-sold="${esc(c.id)}">相場を見る</button><button class="danger" data-del="${esc(c.id)}">削除</button></div></div>`).join(''):'<p class="muted">まだカードがありません。</p>';
+function render(){const sels=['mercariTarget','compareTarget','priceTarget','marketTarget','overallTarget','memoCard','restockTarget'];sels.forEach(id=>options(id,$(id).value));$('cardList').innerHTML=data.cards.length?data.cards.map(c=>`<div class="item"><div class="cardrow">${c.image?`<img class="thumb" src="${c.image}" alt="カード画像">`:'<div class="thumb"></div>'}<div style="min-width:0;flex:1"><div class="name">${esc(c.name)}</div><div class="muted">${esc(c.cardNo||'番号未登録')} / ${esc(c.rarity||'レアリティ未登録')}</div><div class="chip">必要 ${Number(c.wanted)||1} 枚</div> <span class="chip">${esc(c.priority||'中')}</span><div class="muted">${esc(c.version||'')}</div></div></div><div class="actions"><button class="secondary" data-edit="${esc(c.id)}">編集</button><button class="secondary" data-sold="${esc(c.id)}">相場を見る</button><button class="danger" data-del="${esc(c.id)}">削除</button></div></div>`).join(''):'<p class="muted">まだカードがありません。</p>';
 $('cardList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editCard(b.dataset.edit));$('cardList').querySelectorAll('[data-sold]').forEach(b=>b.onclick=()=>{openMarket(b.dataset.sold)});$('cardList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(confirm('カードと紐づく価格・売却データを削除しますか？')){data.cards=data.cards.filter(c=>c.id!==b.dataset.del);data.prices=data.prices.filter(p=>p.cardId!==b.dataset.del);data.sold=data.sold.filter(p=>p.cardId!==b.dataset.del);data.shopMemos=data.shopMemos.filter(p=>p.cardId!==b.dataset.del);persist()}});
-renderSold();renderLinks();renderPrices();renderShopComparison();renderMarketOverview();renderShops();renderShopMemos();renderOverall();}
+renderSold();renderLinks();renderPrices();renderShopComparison();renderMarketOverview();renderShops();renderShopMemos();renderOverall();renderRestockShops();renderRestockPreview();}
 function resetCard(){editId=null;cardImage=null;cardFile=null;$('formTitle').textContent='カードを登録';['cardName','cardNo','rarity','version'].forEach(x=>$(x).value='');$('wanted').value=1;$('priority').value='中';$('cardFile').value='';$('detailFile').value='';$('detailDebug').classList.add('hidden');$('detailStatus').textContent='';detailBitmap=null;$('detailCropBox').classList.add('hidden');$('cropPanel').classList.add('hidden');$('cancelEdit').classList.add('hidden');$('cardOcrStatus').textContent='';}
 function editCard(id){let c=getCard(id);if(!c)return;editId=id;cardImage=c.image||null;cardFile=null;$('formTitle').textContent='カードを編集';['name','cardNo','rarity','version','wanted','priority'].forEach(k=>$(k==='name'?'cardName':k).value=c[k]??(k==='wanted'?1:''));$('cardFile').value='';$('detailFile').value='';$('detailDebug').classList.add('hidden');$('detailStatus').textContent='';detailBitmap=null;$('detailCropBox').classList.add('hidden');$('cropPanel').classList.toggle('hidden',!c.image);$('cardPreview').src=c.image||'';$('cancelEdit').classList.remove('hidden');tab('wishlist');window.scrollTo(0,0)}
 $('cancelEdit').onclick=resetCard;
@@ -369,3 +369,28 @@ $('fetchAutoFeed').onclick=async()=>{
  }catch(e){status.textContent='取得失敗：'+e.message+'。既存の価格データは変更していません。'}
  finally{button.disabled=false}
 };
+
+// v2.8: X and Google search links only. No automatic collection or X API.
+function renderRestockShops(){
+ const el=$('restockShop');if(!el)return;
+ const old=el.value;
+ el.innerHTML=(data.shops||[]).map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join('');
+ if((data.shops||[]).some(s=>s.id===old))el.value=old;
+}
+function restockQuery(){
+ const c=getCard($('restockTarget').value),shop=(data.shops||[]).find(s=>s.id===$('restockShop').value);
+ if(!c||!shop)return null;
+ const mode=$('restockTerm').value;
+ const name=String(c.name||'').trim(),no=String(c.cardNo||'').trim();
+ const term=mode==='number'?(no||name):mode==='both'?([name,no].filter(Boolean).join(' ')):(name||no);
+ return [shop.name,term,'入荷',$('restockExclude').checked?'-買取 -買取表 -買取強化':''].filter(Boolean).join(' ');
+}
+function renderRestockPreview(){const el=$('restockPreview');if(el)el.textContent='検索語：'+(restockQuery()||'カードと店舗を選択してください');}
+['restockTarget','restockShop','restockTerm','restockExclude'].forEach(id=>$(id).addEventListener('change',renderRestockPreview));
+function openRestock(engine){const q=restockQuery();if(!q)return alert('カードと店舗を登録してください');
+ const url=engine==='x'?'https://x.com/search?q='+encodeURIComponent(q)+'&src=typed_query&f=live':'https://www.google.com/search?q='+encodeURIComponent('site:x.com '+q);
+ window.open(url,'_blank','noopener,noreferrer');
+}
+$('restockX').onclick=()=>openRestock('x');
+$('restockGoogle').onclick=()=>openRestock('google');
+$('restockSettings').onclick=()=>tab('settings');
