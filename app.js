@@ -80,33 +80,21 @@ function extractDetail(fullText){
 // カード名はOCR行の位置関係から「公式サイトの見出し」を探す。
 // 画面内の固定ピクセル座標ではなく、スタンダード行・サイトの上部・文字サイズを手掛かりにする。
 function findHeadingName(ocr){
- const raw=(ocr.lines||[]).map(l=>({text:(l.text||'').replace(/\s+/g,' ').trim(),box:l.bbox||{},confidence:l.confidence||0})).filter(l=>l.text);
- const rows=raw.filter(l=>Number.isFinite(l.box.y0)&&Number.isFinite(l.box.y1));
- if(!rows.length)return '';
- const bottom=rows.find(l=>/スタンダード/.test(l.text));
- const limit=bottom?bottom.box.y0:Infinity;
- const width=Math.max(...rows.map(l=>l.box.x1||0),1);
- const heights=rows.map(l=>l.box.y1-l.box.y0).filter(h=>h>3).sort((a,b)=>a-b);
- const median=heights[Math.floor(heights.length/2)]||20;
- const rejected=/^(?:\d{1,2}:\d{2}|\d+%|[0-9: .]+|.*(?:cf-vanguard\.com|github\.io|https?:|www\.|ヴァンガード|カードファイト|検索結果一覧|カード検索|カードリスト|メニュー|MENU|スタンダード|グレード|パワー|シールド|クリティカル|ペルソナシリーズ|ペルソナトークン|その他|進化:|【永】|【自】|【起】|©|AT LUS|SEGA).*)$/i;
- const candidates=rows.filter(l=>{
-  const t=l.text.replace(/\s*[（(][^）)]{1,35}[）)]\s*$/,'').trim();
-  const h=l.box.y1-l.box.y0;
-  return l.box.y1<limit && /[ぁ-んァ-ヶ一-龠]/.test(t) && t.length>=2 && t.length<=42 && !rejected.test(t) && !/^[\W\d]+$/.test(t) && h>=median*.85;
- });
- // タイトルは通常、サイト上部のナビゲーションの下、カード属性の上に大きな文字で置かれる。
- // 高さを優先し、同じ程度なら「スタンダード」に近い見出しを選ぶ。
- candidates.sort((a,b)=>{
-  const ah=a.box.y1-a.box.y0,bh=b.box.y1-b.box.y0;
-  const aScore=ah/median*3 + (a.box.x0>width*.15&&a.box.x1<width*.9?1:0) + (limit<Infinity?Math.max(0,1-(limit-a.box.y1)/Math.max(limit,1)):0);
-  const bScore=bh/median*3 + (b.box.x0>width*.15&&b.box.x1<width*.9?1:0) + (limit<Infinity?Math.max(0,1-(limit-b.box.y1)/Math.max(limit,1)):0);
-  return bScore-aScore;
- });
- if(!candidates.length)return '';
- const best=candidates[0];
- // 疑わしい行を自動入力しない。読み取れなければ手入力。
- if(best.confidence<35)return '';
- return best.text.replace(/\s*[（(][^）)]{1,35}[）)]\s*$/,'').trim();
+ // OCRの先頭行にはiOS時刻やブラウザ操作が含まれるため採用しない。
+ // 公式詳細ページのカード名は「その他｜ペルソナシリーズ…」の属性行の直前。
+ const raw=(ocr.text||'').split(/\n/).map(t=>t.replace(/[\u200b-\u200d]/g,'').replace(/\s+/g,' ').trim()).filter(Boolean);
+ const reject=t=>/\d{1,2}:\d{2}|(?:github|vanguard)\.(?:io|com)|https?:|www\.|[<>@]|質問|検索|ヴァンガード|カードファイト|スタンダード|その他|ペルソナ|グレード|パワー|シールド|クリティカル|©|SEGA|AT LUS|前のカード|次のカード|検索結果|カードリスト|メニュー|MENU|ホーム|HOME|カード名|進化[:：]|【|\+5000/.test(t)||!/[ぁ-んァ-ヶ一-龠]/.test(t)||t.length<2||t.length>35;
+ const clean=t=>t.replace(/^[\s|｜・:：]+|[\s|｜・:：]+$/g,'').replace(/\s*[（(][^）)]{1,40}[）)]\s*$/,'').trim();
+ const anchor=raw.findIndex(t=>/その他|ペルソナシリーズ|ペルソナトークン/.test(t));
+ if(anchor>=0){
+  // 属性行のすぐ前を優先し、離れたブラウザUI文字は拾わない。
+  for(let i=anchor-1;i>=Math.max(0,anchor-4);i--){const t=clean(raw[i]);if(!reject(t))return t;}
+ }
+ // 座標付きOCR行があれば、属性行の直上にある見出しを選ぶ。
+ const lines=(ocr.lines||[]).map(l=>({text:clean(l.text||''),box:l.bbox||{},confidence:l.confidence||0}));
+ const attrs=lines.filter(l=>/その他|ペルソナシリーズ|ペルソナトークン/.test(l.text)&&Number.isFinite(l.box.y0));
+ if(attrs.length){const y=Math.min(...attrs.map(l=>l.box.y0));const candidates=lines.filter(l=>!reject(l.text)&&Number.isFinite(l.box.y1)&&l.box.y1<y&&y-l.box.y1<y*.24&&l.confidence>=30).sort((a,b)=>b.box.y1-a.box.y1);if(candidates.length)return candidates[0].text;}
+ return '';
 }
 $('scanDetail').onclick=async()=>{
  const file=$('detailFile').files[0];if(!file)return alert('公式サイトの詳細画面スクリーンショットを選択してください');
@@ -122,7 +110,7 @@ $('scanDetail').onclick=async()=>{
   else $('detailStatus').textContent='カード名の見出しを確実に特定できませんでした。手入力してください。';
   if(parsed.cardNo)$('cardNo').value=parsed.cardNo;
   if(parsed.rarity)$('rarity').value=parsed.rarity;
-  $('detailText').textContent='【読み取り全文】\n'+fullText+'\n\n【見出し候補（OCR行）】\n'+(ocr.lines||[]).filter(l=>/[ぁ-んァ-ヶ一-龠]/.test(l.text||'')).slice(0,30).map(l=>`${l.text} / y=${l.bbox?.y0||0} / confidence=${Math.round(l.confidence||0)}`).join('\n');
+  $('detailText').textContent='【カード名抽出方法：属性行『その他』の直前を優先】\n【読み取り全文】\n'+fullText+'\n\n【見出し候補（OCR行）】\n'+(ocr.lines||[]).filter(l=>/[ぁ-んァ-ヶ一-龠]/.test(l.text||'')).slice(0,30).map(l=>`${l.text} / y=${l.bbox?.y0||0} / confidence=${Math.round(l.confidence||0)}`).join('\n');
   $('detailDebug').classList.remove('hidden');
   $('detailStatus').textContent=`候補：名前 ${parsed.name||'未検出'} / 番号 ${parsed.cardNo||'未検出'} / レアリティ ${parsed.rarity||'未検出'}。必ず確認・修正してください。`;
  }catch(e){$('detailStatus').textContent='読み取り失敗：'+e.message+'。手入力で登録できます。'}finally{btn.disabled=false;btn.textContent='詳細画面から名前・番号・レアリティを読み取る'}

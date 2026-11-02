@@ -1,6 +1,1 @@
-CPF v1.4 TEST
-- Card name: OCR heading detection based on line geometry and context (not first OCR text).
-- Exclude phone time, URL and site navigation.
-- Card number and rarity parsing unchanged.
-- Manual edits, crop, progress and diagnostic text retained.
-- Keep existing icon files in GitHub; upload all five files from ZIP.
+CPF v1.5 TEST\n\nカード名は「その他」「ペルソナシリーズ」などの属性行直前を優先して抽出。iOS時刻・ブラウザUI・記号混じりの文字を除外。カード番号とレアリティの抽出は維持。画面上部・フッター・SWキャッシュをv1.5に更新。認識結果は登録前に確認してください。\n
