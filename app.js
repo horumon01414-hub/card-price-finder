@@ -49,7 +49,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function detailSelectionRender(){
  const canvas=$('detailCropImage'),sel=$('detailCropSelection');
  Object.assign(sel.style,{left:(detailBounds.x*100)+'%',top:(detailBounds.y*100)+'%',width:(detailBounds.w*100)+'%',height:(detailBounds.h*100)+'%'});
- $('detailCropInfo').textContent='選択範囲：横 '+Math.round(detailBounds.w*100)+'%・縦 '+Math.round(detailBounds.h*100)+'%。指で画像をなぞって指定してください。';
+ $('detailCropInfo').textContent='選択範囲：横 '+Math.round(detailBounds.w*100)+'%・縦 '+Math.round(detailBounds.h*100)+'%。枠の内側で移動、四隅で大きさを変更できます。';
 }
 function detailReset(){detailBounds={x:0,y:0,w:1,h:1};detailSelectionRender()}
 $('detailCropReset').onclick=detailReset;
@@ -67,17 +67,19 @@ $('detailFile').addEventListener('change',async()=>{
   canvas.height=Math.max(1,Math.round(im.naturalHeight*scale));
   const ctx=canvas.getContext('2d');if(!ctx)throw Error('画像プレビューを作成できません');
   ctx.drawImage(im,0,0,canvas.width,canvas.height);
-  detailBounds={x:0,y:0,w:1,h:1};
+  detailBounds={x:.05,y:.12,w:.90,h:.76};
   $('detailCropBox').classList.remove('hidden');
   requestAnimationFrame(detailSelectionRender);
   ocrStatus('詳細画像のプレビューを表示しました。指で範囲を指定できます。');
  }catch(e){detailBitmap=null;$('detailCropBox').classList.remove('hidden');$('detailCropError').textContent='画像プレビューの読み込みに失敗：'+e.message;ocrStatus('画像の読み込みに失敗しました。別の画像を選択してください。')}
 });
 const cropStage=$('detailCropStage');
+const MIN_CROP=.08;
 function normalizedPointer(e){const r=$('detailCropImage').getBoundingClientRect();return {x:clamp((e.clientX-r.left)/Math.max(1,r.width),0,1),y:clamp((e.clientY-r.top)/Math.max(1,r.height),0,1)}}
-cropStage.addEventListener('pointerdown',e=>{if(!detailBitmap)return;e.preventDefault();try{cropStage.setPointerCapture(e.pointerId)}catch(_){}detailDrag=normalizedPointer(e);detailBounds={x:detailDrag.x,y:detailDrag.y,w:0,h:0};detailSelectionRender()});
-cropStage.addEventListener('pointermove',e=>{if(!detailDrag)return;e.preventDefault();const p=normalizedPointer(e);detailBounds={x:Math.min(p.x,detailDrag.x),y:Math.min(p.y,detailDrag.y),w:Math.abs(p.x-detailDrag.x),h:Math.abs(p.y-detailDrag.y)};detailSelectionRender()});
-function endDrag(){if(!detailDrag)return;detailDrag=null;if(detailBounds.w<.04||detailBounds.h<.04)detailReset();else detailSelectionRender()}
+function cropHit(p){const b=detailBounds,margin=.045;const corners=[['nw',b.x,b.y],['ne',b.x+b.w,b.y],['sw',b.x,b.y+b.h],['se',b.x+b.w,b.y+b.h]];for(const [mode,x,y] of corners){if(Math.abs(p.x-x)<margin&&Math.abs(p.y-y)<margin)return mode}if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h)return 'move';return null}
+cropStage.addEventListener('pointerdown',e=>{if(!detailBitmap||detailDrag)return;const p=normalizedPointer(e),mode=cropHit(p);if(!mode)return;e.preventDefault();try{cropStage.setPointerCapture(e.pointerId)}catch(_){}detailDrag={id:e.pointerId,mode,start:p,original:{...detailBounds}}});
+cropStage.addEventListener('pointermove',e=>{if(!detailDrag||detailDrag.id!==e.pointerId)return;e.preventDefault();const p=normalizedPointer(e),d=detailDrag,b=d.original,dx=p.x-d.start.x,dy=p.y-d.start.y;let left=b.x,top=b.y,right=b.x+b.w,bottom=b.y+b.h;if(d.mode==='move'){left=clamp(b.x+dx,0,1-b.w);top=clamp(b.y+dy,0,1-b.h);right=left+b.w;bottom=top+b.h}else{if(d.mode.includes('w'))left=clamp(b.x+dx,0,right-MIN_CROP);if(d.mode.includes('e'))right=clamp(b.x+b.w+dx,left+MIN_CROP,1);if(d.mode.includes('n'))top=clamp(b.y+dy,0,bottom-MIN_CROP);if(d.mode.includes('s'))bottom=clamp(b.y+b.h+dy,top+MIN_CROP,1)}detailBounds={x:left,y:top,w:right-left,h:bottom-top};detailSelectionRender()});
+function endDrag(e){if(detailDrag&&detailDrag.id===e.pointerId){detailDrag=null;detailSelectionRender()}}
 cropStage.addEventListener('pointerup',endDrag);cropStage.addEventListener('pointercancel',endDrag);
 function detailOcrCanvas(){
  if(!detailBitmap)throw Error('詳細画像を選択してください');
