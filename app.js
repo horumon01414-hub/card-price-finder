@@ -44,7 +44,7 @@ $('manualAdd').onclick=()=>{const id=$('mercariTarget').value,p=Number($('manual
 function renderSold(){const id=$('mercariTarget').value,rows=data.sold.filter(x=>x.cardId===id);$('mercariSummary').innerHTML=`<div class="panel"><h2>メルカリ参考メモ</h2><p class="muted">${rows.length}件の手動メモがあります。売却相場の自動算出は行いません。</p></div>`;$('mercariRecords').innerHTML=rows.slice().reverse().map(e=>`<div class="item"><div class="row"><b>${yen(e.price)}</b><span class="muted">${new Date(e.created||Date.now()).toLocaleDateString('ja-JP')}</span></div><p class="muted">${esc(e.title||'メモなし')}</p><div class="actions"><button class="secondary" data-soldedit="${esc(e.id)}">修正</button><button class="danger" data-solddelete="${esc(e.id)}">削除</button></div></div>`).join('');$('mercariRecords').querySelectorAll('[data-soldedit]').forEach(b=>b.onclick=()=>{let e=data.sold.find(x=>x.id===b.dataset.soldedit);let p=prompt('参考価格（円）',e.price);if(p===null)return;let n=Number(p);if(!Number.isFinite(n)||n<=0)return alert('正しい価格を入力してください');let t=prompt('メモ',e.title||'');if(t===null)return;e.price=n;e.title=t;persist()});$('mercariRecords').querySelectorAll('[data-solddelete]').forEach(b=>b.onclick=()=>{if(confirm('このメモを削除しますか？')){data.sold=data.sold.filter(x=>x.id!==b.dataset.solddelete);persist()}})};
 $('mercariTarget').onchange=()=>selectMarketCard($('mercariTarget').value);
 $('savePrice').onclick=()=>{let id=$('priceTarget').value,p=Number($('price').value);if(!id||!Number.isFinite(p)||p<0||$('price').value==='')return alert('カードと価格を入力してください');data.prices.push({id:uid(),cardId:id,kind:$('kind').value,source:$('sourceName').value.trim(),price:p,shipping:Number($('shipping').value)||0,stock:$('stock').value,condition:$('condition').value,note:$('itemNote').value,url:$('url').value,created:Date.now()});if(persist())$('price').value=''};
-function renderPrices(){let id=$('compareTarget').value,rows=data.prices.filter(x=>x.cardId===id),online=rows.filter(x=>x.kind==='online'),best=online.filter(x=>x.stock!=='売り切れ').sort((a,b)=>(Number(a.price)+Number(a.shipping))-(Number(b.price)+Number(b.shipping)))[0];$('priceSummary').innerHTML=`<div class="panel"><h2>登録済み通販価格</h2><div class="price">${best?yen(Number(best.price)+Number(best.shipping)):'データなし'}</div><p class="muted">手動登録の送料込み参考最安値。在庫数・必要枚数は未照合です。</p></div>`;$('priceRecords').innerHTML=rows.slice().reverse().map(p=>`<div class="item"><div class="row"><b>${esc(p.source||'名称なし')}</b><b class="gold">${yen(Number(p.price)+Number(p.shipping))}</b></div><p class="muted">${esc(p.kind)} / 在庫: ${esc(p.stock||'不明')} / ${esc(p.note||'')}</p><div class="actions">${/^https?:\/\//.test(p.url||'')?`<a class="btn secondary" href="${esc(p.url)}" target="_blank" rel="noopener">商品ページ</a>`:''}<button class="danger" data-price-del="${esc(p.id)}">削除</button></div></div>`).join('');$('priceRecords').querySelectorAll('[data-price-del]').forEach(b=>b.onclick=()=>{if(confirm('価格情報を削除しますか？')){data.prices=data.prices.filter(p=>p.id!==b.dataset.priceDel);persist()}})};
+function renderPrices(){let id=$('compareTarget').value,rows=data.prices.filter(x=>x.cardId===id),online=rows.filter(x=>x.kind==='online'),best=online.filter(x=>x.stock!=='売り切れ').sort((a,b)=>(Number(a.price)+Number(a.shipping))-(Number(b.price)+Number(b.shipping)))[0];$('priceSummary').innerHTML=`<div class="panel"><h2>登録済み通販価格</h2><div class="price">${best?yen(Number(best.price)+Number(best.shipping)):'データなし'}</div><p class="muted">手動登録の送料込み参考最安値。在庫数・必要枚数は未照合です。</p></div>`;$('priceRecords').innerHTML=rows.slice().reverse().map(p=>`<div class="item"><div class="row"><b>${esc(p.source||'名称なし')}</b><b class="gold">${yen(Number(p.price)+Number(p.shipping))}</b></div><p class="muted">${p.origin==='feed'?'連携データ':'手動登録'} / ${esc(p.kind)} / 在庫: ${esc(p.stock||'不明')} / ${esc(p.note||'')} ${p.origin==='feed'?' / 確認日時: '+esc(p.checkedAt||'不明'):''}</p><div class="actions">${/^https?:\/\//.test(p.url||'')?`<a class="btn secondary" href="${esc(p.url)}" target="_blank" rel="noopener">商品ページ</a>`:''}<button class="danger" data-price-del="${esc(p.id)}">削除</button></div></div>`).join('');$('priceRecords').querySelectorAll('[data-price-del]').forEach(b=>b.onclick=()=>{if(confirm('価格情報を削除しますか？')){data.prices=data.prices.filter(p=>p.id!==b.dataset.priceDel);persist()}})};
 function renderShops(){$('shopSettings').innerHTML=data.shops.map(s=>`<div class="row item"><span>${esc(s.name)}</span><button class="danger" data-shop-del="${esc(s.id)}">削除</button></div>`).join('');$('shopSettings').querySelectorAll('[data-shop-del]').forEach(b=>b.onclick=()=>{data.shops=data.shops.filter(s=>s.id!==b.dataset.shopDel);persist()})}
 $('addShop').onclick=()=>{let n=$('newShop').value.trim();if(n){data.shops.push({id:uid(),name:n});$('newShop').value='';persist()}};
 $('export').onclick=()=>{let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='cpf-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
@@ -330,4 +330,33 @@ $('saveCustomOnline').onclick=()=>{
   if(rawUrl){try{const u=new URL(rawUrl);if(!['https:','http:'].includes(u.protocol))throw Error();url=u.href;}catch(e){return alert('URLはhttps://またはhttp://から入力してください');}}
   data.customOnlineShops.push({id:uid(),name,url});
   if(persist()){$('customOnlineName').value='';$('customOnlineUrl').value='';$('customOnlineForm').classList.add('hidden');}
+};
+
+// v2.6 TEST: same-origin feed ingestion only. No scraping or invented store prices.
+$('fetchAutoFeed').onclick=async()=>{
+ const status=$('autoFeedStatus'),button=$('fetchAutoFeed');button.disabled=true;status.textContent='価格データを確認しています…';
+ try{
+  const response=await fetch('./prices-feed.json?ts='+Date.now(),{cache:'no-store'});
+  if(!response.ok)throw Error('価格データを読み込めませんでした (HTTP '+response.status+')');
+  const feed=await response.json();
+  if(!feed||feed.schema!==1||!Array.isArray(feed.items))throw Error('データ形式が不正です');
+  if(feed.items.length>1000)throw Error('データ件数が上限を超えています');
+  let added=0,skipped=0,updated=0;
+  for(const item of feed.items){
+   const norm=v=>String(v||'').trim().replace(/[\s　]/g,'').toUpperCase();
+   const card=data.cards.find(c=>norm(c.cardNo)&&norm(c.rarity)&&norm(c.cardNo)===norm(item.cardNo)&&norm(c.rarity)===norm(item.rarity));
+   const price=Number(item.price),shipping=Number(item.shipping);
+   const checked=Date.parse(item.checkedAt||'');
+   const valid=card&&typeof item.source==='string'&&item.source.trim().length>0&&item.source.length<=100&&Number.isSafeInteger(price)&&price>0&&Number.isSafeInteger(shipping)&&shipping>=0&&['あり','残りわずか','売り切れ'].includes(item.stock)&&Number.isFinite(checked)&&checked<=Date.now()+300000&&checked>=Date.now()-7*86400000;
+   let url='';if(item.url){try{const u=new URL(item.url);if(!['http:','https:'].includes(u.protocol))throw Error();url=u.href}catch(e){skipped++;continue}}
+   if(!valid){skipped++;continue}
+   const source=item.source.trim(),existing=data.prices.find(p=>p.origin==='feed'&&p.cardId===card.id&&p.source===source);
+   if(existing&&Date.parse(existing.checkedAt||'')>=checked){skipped++;continue}
+   const entry={cardId:card.id,kind:'online',source,price,shipping,stock:item.stock,condition:'未確認',note:'自動連携データ（商品情報を購入前に確認）',url,origin:'feed',checkedAt:new Date(checked).toISOString(),created:Date.now()};
+   if(existing){Object.assign(existing,entry);updated++}else{data.prices.push({id:uid(),...entry});added++}
+  }
+  if(added||updated)persist();
+  status.textContent=`連携データ：${feed.items.length}件 / 新規${added}件 / 更新${updated}件 / 対象外・未変更${skipped}件。${feed.items.length===0?'現在、連携価格データはありません。':''}`;
+ }catch(e){status.textContent='取得失敗：'+e.message+'。既存の価格データは変更していません。'}
+ finally{button.disabled=false}
 };
