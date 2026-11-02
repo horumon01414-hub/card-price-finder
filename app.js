@@ -15,8 +15,8 @@ function options(id,old){let e=$(id);e.innerHTML=data.cards.map(c=>`<option valu
 function render(){const sels=['mercariTarget','compareTarget','priceTarget'];sels.forEach(id=>options(id,$(id).value));$('cardList').innerHTML=data.cards.length?data.cards.map(c=>`<div class="item"><div class="cardrow">${c.image?`<img class="thumb" src="${c.image}" alt="カード画像">`:'<div class="thumb"></div>'}<div style="min-width:0;flex:1"><div class="name">${esc(c.name)}</div><div class="muted">${esc(c.cardNo||'番号未登録')} / ${esc(c.rarity||'レアリティ未登録')}</div><div class="chip">必要 ${Number(c.wanted)||1} 枚</div> <span class="chip">${esc(c.priority||'中')}</span><div class="muted">${esc(c.version||'')}</div></div></div><div class="actions"><button class="secondary" data-edit="${esc(c.id)}">編集</button><button class="secondary" data-sold="${esc(c.id)}">相場を見る</button><button class="danger" data-del="${esc(c.id)}">削除</button></div></div>`).join(''):'<p class="muted">まだカードがありません。</p>';
 $('cardList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editCard(b.dataset.edit));$('cardList').querySelectorAll('[data-sold]').forEach(b=>b.onclick=()=>{$('mercariTarget').value=b.dataset.sold;tab('mercari');renderSold()});$('cardList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(confirm('カードと紐づく価格・売却データを削除しますか？')){data.cards=data.cards.filter(c=>c.id!==b.dataset.del);data.prices=data.prices.filter(p=>p.cardId!==b.dataset.del);data.sold=data.sold.filter(p=>p.cardId!==b.dataset.del);persist()}});
 renderSold();renderLinks();renderPrices();renderShops();}
-function resetCard(){editId=null;cardImage=null;cardFile=null;$('formTitle').textContent='カードを登録';['cardName','cardNo','rarity','version'].forEach(x=>$(x).value='');$('wanted').value=1;$('priority').value='中';$('cardFile').value='';$('cropPanel').classList.add('hidden');$('cancelEdit').classList.add('hidden');$('cardOcrStatus').textContent='';}
-function editCard(id){let c=getCard(id);if(!c)return;editId=id;cardImage=c.image||null;cardFile=null;$('formTitle').textContent='カードを編集';['name','cardNo','rarity','version','wanted','priority'].forEach(k=>$(k==='name'?'cardName':k).value=c[k]??(k==='wanted'?1:''));$('cardFile').value='';$('cropPanel').classList.toggle('hidden',!c.image);$('cardPreview').src=c.image||'';$('cancelEdit').classList.remove('hidden');tab('wishlist');window.scrollTo(0,0)}
+function resetCard(){editId=null;cardImage=null;cardFile=null;$('formTitle').textContent='カードを登録';['cardName','cardNo','rarity','version'].forEach(x=>$(x).value='');$('wanted').value=1;$('priority').value='中';$('cardFile').value='';$('detailFile').value='';$('detailDebug').classList.add('hidden');$('detailStatus').textContent='';$('cropPanel').classList.add('hidden');$('cancelEdit').classList.add('hidden');$('cardOcrStatus').textContent='';}
+function editCard(id){let c=getCard(id);if(!c)return;editId=id;cardImage=c.image||null;cardFile=null;$('formTitle').textContent='カードを編集';['name','cardNo','rarity','version','wanted','priority'].forEach(k=>$(k==='name'?'cardName':k).value=c[k]??(k==='wanted'?1:''));$('cardFile').value='';$('detailFile').value='';$('detailDebug').classList.add('hidden');$('detailStatus').textContent='';$('cropPanel').classList.toggle('hidden',!c.image);$('cardPreview').src=c.image||'';$('cancelEdit').classList.remove('hidden');tab('wishlist');window.scrollTo(0,0)}
 $('cancelEdit').onclick=resetCard;
 $('saveCard').onclick=async()=>{let name=$('cardName').value.trim();if(!name)return alert('カード名を入力してください');let wanted=Number($('wanted').value);if(!Number.isInteger(wanted)||wanted<1||wanted>999)return alert('必要枚数を1〜999で入力してください');let c=editId?getCard(editId):{id:uid(),created:Date.now()};if(!c)return;Object.assign(c,{name,cardNo:$('cardNo').value.trim(),rarity:$('rarity').value.trim(),version:$('version').value.trim(),wanted,priority:$('priority').value,game:'ヴァンガード',image:cardImage||null});if(!editId)data.cards.push(c);if(persist())resetCard()};
 $('cardFile').onchange=async e=>{cardFile=e.target.files[0];if(!cardFile)return;try{cardImage=await cropImage(cardFile);$('cardPreview').src=cardImage;$('cropPanel').classList.remove('hidden');$('cardOcrStatus').textContent='白背景を自動除去しました。カード全体が写っているか確認してください。';}catch(err){$('cardOcrStatus').textContent='画像を読み込めませんでした: '+err.message}};
@@ -44,3 +44,45 @@ $('addShop').onclick=()=>{let n=$('newShop').value.trim();if(n){data.shops.push(
 $('export').onclick=()=>{let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='cpf-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 $('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let d=JSON.parse(await f.text());if(!Array.isArray(d.cards)||!Array.isArray(d.prices))throw Error('バックアップ形式が違います');if(!confirm('現在のデータをバックアップの内容で置き換えますか？'))return;d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];let prev=data;data=d;if(!persist())data=prev;else resetCard()}catch(err){alert('読み込みに失敗: '+err.message)}finally{e.target.value=''}};
 render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+
+
+// OCR is performed locally in the browser. Japanese language data may download on first use.
+let ocrWorker=null;
+async function recognize(source){
+ if(!window.Tesseract)throw Error('OCRライブラリを読み込めません。インターネット接続を確認してください');
+ if(!ocrWorker)ocrWorker=await Tesseract.createWorker('jpn+eng',1);
+ const result=await ocrWorker.recognize(source);
+ return result.data.text||'';
+}
+function detailRegion(img,x,y,w,h){const c=document.createElement('canvas');const sw=img.naturalWidth,sh=img.naturalHeight;c.width=Math.round(sw*w*2);c.height=Math.round(sh*h*2);const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(img,sw*x,sh*y,sw*w,sh*h,0,0,c.width,c.height);return c;}
+function extractDetail(nameText,codeText,fullText){
+ const clean=t=>t.replace(/[\u200b-\u200d]/g,'').trim();
+ let names=nameText.split(/\n/).map(clean).filter(Boolean).filter(t=>!/^(カードリスト|カード詳細|ヴァンガード|検索|MENU|カードファイト)/i.test(t));
+ let name=names.find(t=>/[\u3040-\u30ff\u3400-\u9fff]/.test(t)&&t.length>=3)||'';
+ name=name.replace(/[（(][^）)]{1,30}[）)]\s*$/,'').trim();
+ let merged=(codeText+'\n'+fullText).toUpperCase().replace(/[‐‑–—−]/g,'-');
+ let m=merged.match(/(?:DZ|D|V|G|BT|PR|P|TD|EB|CP|T)[-\s]?[A-Z0-9]{1,12}\s*\/\s*[A-Z0-9+\-]{2,12}/i);
+ let cardNo=m?m[0].replace(/\s/g,''):'';
+ let rarity='';
+ const codeLine=merged.split('\n').find(l=>cardNo&&l.replace(/\s/g,'').includes(cardNo))||'';
+ let r=codeLine.match(/(?:^|[|｜\s])(?:T\+|RRRR|RRR|RR|R|C|FFR|FR|SR|SEC|SP|PR)(?=$|[|｜\s])/i);
+ if(r)rarity=r[0].trim();
+ return {name,cardNo,rarity};
+}
+$('scanDetail').onclick=async()=>{
+ const file=$('detailFile').files[0];if(!file)return alert('公式サイトの詳細画面スクリーンショットを選択してください');
+ const btn=$('scanDetail');btn.disabled=true;$('detailStatus').textContent='OCRの準備・読み取り中です。初回は言語データのダウンロードに時間がかかります…';
+ try{
+  const img=await loadImage(file);
+  // Site title is near upper-middle, and card code/rarity near the bottom.
+  const title=await recognize(detailRegion(img,.02,.15,.96,.24));
+  const code=await recognize(detailRegion(img,.02,.60,.96,.20));
+  const parsed=extractDetail(title,code,title+'\n'+code);
+  if(parsed.name)$('cardName').value=parsed.name;
+  if(parsed.cardNo)$('cardNo').value=parsed.cardNo;
+  if(parsed.rarity)$('rarity').value=parsed.rarity;
+  $('detailText').textContent='【カード名領域】\n'+title+'\n【カード番号領域】\n'+code;
+  $('detailDebug').classList.remove('hidden');
+  $('detailStatus').textContent=`候補：名前 ${parsed.name||'未検出'} / 番号 ${parsed.cardNo||'未検出'} / レアリティ ${parsed.rarity||'未検出'}。必ず確認・修正して保存してください。`;
+ }catch(e){$('detailStatus').textContent='読み取り失敗：'+e.message+'。手入力で登録できます。'}finally{btn.disabled=false}
+};
