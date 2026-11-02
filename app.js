@@ -32,7 +32,8 @@ function renderLinks(){
   const cardNo=String(c?.cardNo||'').normalize('NFKC').replace(/[\s　]+/g,'').replace(/[／]/g,'/');
   const term=cardNo||String(c?.name||'').trim();
   const mk=(name,url)=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(name)} ↗</a>`;
-  $('shopLinks').innerHTML=shopNames.map(([n])=>mk(n,comparisonSearchUrl(n,c))).join('');
+  $('shopLinks').innerHTML=shopNames.map(([n])=>mk(n,comparisonSearchUrl(n,c))).join('')+
+    mk('その他','https://www.google.com/search?q='+encodeURIComponent('ヴァンガード '+String(c?.name||'').trim()+' 通販'));
   const query='ヴァンガード '+term;
   $('marketLinks').innerHTML=mk('楽天市場','https://search.rakuten.co.jp/search/mall/?sitem='+encodeURIComponent(query))+
     mk('Amazon','https://www.amazon.co.jp/s?k='+encodeURIComponent(query));
@@ -386,15 +387,24 @@ function renderRestockShops(){
 function restockQuery(images=false){
  const c=getCard($('restockTarget').value),shop=(data.xAccounts||[]).find(s=>s.id===$('restockShop').value);
  if(!c||!shop)return null;
- const term=String(c.name||'').trim();if(!term)return null;
+ const term=String($('restockKeyword').value||'').trim();if(!term)return null;
  const now=new Date();const since=new Date(now);since.setMonth(since.getMonth()-1);
  const date=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
  const until=new Date(now);until.setDate(until.getDate()+1);
- return ['from:'+shop.handle,term,'-買取','since:'+date(since),'until:'+date(until),images?'filter:images':''].filter(Boolean).join(' ');
+ return ['from:'+shop.handle,'ヴァンガード',term,'-買取','since:'+date(since),'until:'+date(until),images?'filter:images':''].filter(Boolean).join(' ');
 }
 function renderRestockPreview(){const el=$('restockPreview');if(el)el.textContent='検索条件：'+(restockQuery()||'カードと登録済みXアカウントを選択してください');}
-['restockTarget','restockShop'].forEach(id=>$(id).addEventListener('change',renderRestockPreview));
-function openRestock(images){const q=restockQuery(images);if(!q)return alert('カードと店舗のXアカウントを登録・選択してください');
+function updateRestockKeywordFromCard(){
+ const c=getCard($('restockTarget').value);
+ $('restockKeyword').value=c?String(c.name||''):'';
+ renderRestockPreview();
+}
+$('restockTarget').addEventListener('change',updateRestockKeywordFromCard);
+$('restockShop').addEventListener('change',renderRestockPreview);
+$('restockKeyword').addEventListener('input',renderRestockPreview);
+// Default to the selected card name on first load; the user can freely edit it.
+updateRestockKeywordFromCard();
+function openRestock(images){const q=restockQuery(images);if(!q)return alert('カード・店舗のXアカウント・検索キーワードを確認してください');
  window.open('https://x.com/search?q='+encodeURIComponent(q)+'&src=typed_query&f=live','_blank','noopener,noreferrer');
 }
 $('restockX').onclick=()=>openRestock(false);
@@ -412,3 +422,6 @@ $('restockAdd').onclick=()=>{
  data.xAccounts.push({id:uid(),name,handle});
  if(persist()){$('restockShopName').value='';$('restockShopHandle').value='';$('restockShop').value=data.xAccounts[data.xAccounts.length-1].id;renderRestockPreview()}
 };
+
+// v2.8.2 initial search keyword after card list initialization.
+if($('restockKeyword') && !$('restockKeyword').value.trim())updateRestockKeywordFromCard();
