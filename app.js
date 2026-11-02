@@ -58,8 +58,8 @@ function detailRegion(img,x,y,w,h){const c=document.createElement('canvas');cons
 function extractDetail(nameText,codeText,fullText){
  const clean=t=>t.replace(/[\u200b-\u200d]/g,'').trim();
  let names=nameText.split(/\n/).map(clean).filter(Boolean).filter(t=>!/^(カードリスト|カード詳細|ヴァンガード|検索|MENU|カードファイト)/i.test(t));
- let name=names.find(t=>/[\u3040-\u30ff\u3400-\u9fff]/.test(t)&&t.length>=3)||'';
- name=name.replace(/[（(][^）)]{1,30}[）)]\s*$/,'').trim();
+ let name=names.find(t=>/[\u3040-\u30ff\u3400-\u9fff]/.test(t)&&t.length>=3&&!/^(その他|グレード|パワー|クリティカル|シールド)/.test(t))||'';
+ name=name.replace(/[（(][^）)]{1,30}[）)]\s*$/,'').replace(/[|｜].*$/,'').trim();
  let merged=(codeText+'\n'+fullText).toUpperCase().replace(/[‐‑–—−]/g,'-');
  let m=merged.match(/(?:DZ|D|V|G|BT|PR|P|TD|EB|CP|T)[-\s]?[A-Z0-9]{1,12}\s*\/\s*[A-Z0-9+\-]{2,12}/i);
  let cardNo=m?m[0].replace(/\s/g,''):'';
@@ -75,7 +75,7 @@ $('scanDetail').onclick=async()=>{
  try{
   const img=await loadImage(file);
   // Site title is near upper-middle, and card code/rarity near the bottom.
-  const title=await recognize(detailRegion(img,.02,.15,.96,.24));
+  const title=await recognize(detailRegion(img,.20,.215,.66,.080));
   const code=await recognize(detailRegion(img,.02,.60,.96,.20));
   const parsed=extractDetail(title,code,title+'\n'+code);
   if(parsed.name)$('cardName').value=parsed.name;
