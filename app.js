@@ -25,14 +25,14 @@ function findCardBounds(img){const max=650,ratio=Math.min(1,max/Math.max(img.nat
 async function cropImage(source){let img=await loadImage(source),b=findCardBounds(img),scale=Math.min(1,850/Math.max(b.sw,b.sh)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(b.sw*scale));c.height=Math.max(1,Math.round(b.sh*scale));c.getContext('2d').drawImage(img,b.sx,b.sy,b.sw,b.sh,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.84)}
 $('cropCheck').onclick=async()=>{if(!cardFile)return;try{cardImage=await cropImage(cardFile);$('cardPreview').src=cardImage;$('cardOcrStatus').textContent='白背景を自動除去しました。'}catch(e){alert(e.message)}};
 
-const shopNames=[['カードラッシュ','https://www.google.com/search?q=site%3Acardrush-vanguard.jp+'],['カードラボ','https://www.google.com/search?q=site%3Ac-labo-online.jp+'],['遊々亭','https://www.google.com/search?q=site%3Ayuyu-tei.jp+'],['ドラゴンスター','https://www.google.com/search?q=site%3Adorasuta.jp%2Fvanguard%2F+'],['通販のPAO','https://www.google.com/search?q=site%3Apao-onlineshop.com+']];
+const shopNames=['カードラッシュ','カードラボ','遊々亭','ドラゴンスター','通販のPAO'].map(name=>[name,'']);
 function renderLinks(){
   const c=getCard($('compareTarget').value);
   // カード番号を名称やレアリティから推測せず、登録値から直接使用する。
   const cardNo=String(c?.cardNo||'').normalize('NFKC').replace(/[\s　]+/g,'').replace(/[／]/g,'/');
   const term=cardNo||String(c?.name||'').trim();
   const mk=(name,url)=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(name)} ↗</a>`;
-  $('shopLinks').innerHTML=shopNames.map(([n,p])=>mk(n,p+encodeURIComponent(term))).join('');
+  $('shopLinks').innerHTML=shopNames.map(([n])=>mk(n,comparisonSearchUrl(n,c))).join('');
   const query='ヴァンガード '+term;
   $('marketLinks').innerHTML=mk('楽天市場','https://search.rakuten.co.jp/search/mall/?sitem='+encodeURIComponent(query))+
     mk('Amazon','https://www.amazon.co.jp/s?k='+encodeURIComponent(query));
