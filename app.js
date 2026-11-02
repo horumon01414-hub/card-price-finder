@@ -200,14 +200,12 @@ $('scanDetail').onclick=async()=>{
 
 // v2.0: 端末内の手動登録データだけを使った比較。外部サイトを自動取得しない。
 function comparisonSearchUrl(name,card){
-  // Always open a Google results page. Do not depend on outdated shop domains or guessed product URLs.
+  // Search with Japanese shop name + registered card number only.
+  // Avoid site: filters, product URLs and additional rarity/name terms.
   const no=String(card?.cardNo||'').normalize('NFKC').replace(/[\s　]+/g,'').replace(/／/g,'/');
   const cardName=String(card?.name||'').trim();
-  const rarity=String(card?.rarity||'').trim();
-  const words=['ヴァンガード',name,no||cardName];
-  if(no&&cardName)words.push(cardName);
-  if(rarity)words.push(rarity);
-  return 'https://www.google.com/search?q='+encodeURIComponent(words.filter(Boolean).join(' '));
+  const query=[String(name||'').trim(),no||cardName].filter(Boolean).join(' ');
+  return 'https://www.google.com/search?q='+encodeURIComponent(query);
 }
 function renderShopComparison(){
   const target=$('shopCompareTable');
