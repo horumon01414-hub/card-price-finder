@@ -56,7 +56,7 @@ async function recognize(source){
  }
  ocrStatus('画像の文字を解析しています…');
  const result=await ocrWorker.recognize(source);
- return result.data.text||'';
+ return result.data;
 }
 // 固定座標を使わず、公式ページの項目ラベルとOCR文字列の並びで抽出します。
 function extractDetail(fullText){
@@ -73,24 +73,56 @@ function extractDetail(fullText){
  candidates.push(...normalized);
  for(const line of candidates){let m=line.match(codePattern);if(m){code=m[0].replace(/\s/g,'');const right=line.slice(m.index+m[0].length);let r=right.match(/(?:^|\s|[:：])\s*(T\+|RRRR|RRR|RR|R|C|FFR|FR|SR|SEC|SP|PR|ORR|DSR|EXRR|EX)(?=\s|$|[）)])/i);if(r)rarity=r[1].toUpperCase();break}}
  if(!rarity&&code){const idx=normalized.findIndex(l=>l.includes(code));const after=idx>=0?normalized.slice(idx+1,idx+3).join(' '):'';const m=after.match(/^(?:レアリティ\s*[:：]?\s*)?(T\+|RRRR|RRR|RR|R|C|FFR|FR|SR|SEC|SP|PR|ORR|DSR|EXRR|EX)(?=\s|$)/i);if(m)rarity=m[1].toUpperCase()}
- // OCRで読めた文章の最初のカード名候補を優先。ナビゲーションと項目名は除外。
- const candidatesName=lines.map(t=>t.replace(/^カード名\s*[:：]\s*/,'').trim()).filter(t=>t&&!ignore.test(t)&&/[ぁ-んァ-ヶ一-龠]/.test(t)&&t.length>=2&&!/^(?:スタンダード|カード番号|レアリティ|グレード|パワー|シールド|クリティカル|国家|種族|効果|テキスト|収録|商品|発売|価格|イラスト|カードリスト)/.test(t)&&!codePattern.test(codeNormalize(t))&&!/https?:|www\.|©|Copyright/i.test(t));
- let name=candidatesName[0]||'';
- name=name.replace(/\s*[（(][^）)]{1,30}[）)]\s*$/,'').trim();
+ // OCRテキストの先頭はiPhoneの時刻・URLになりやすい。名前は後述の見出し判定で決める。
+ let name='';
  return {name,cardNo:code,rarity};
+}
+// カード名はOCR行の位置関係から「公式サイトの見出し」を探す。
+// 画面内の固定ピクセル座標ではなく、スタンダード行・サイトの上部・文字サイズを手掛かりにする。
+function findHeadingName(ocr){
+ const raw=(ocr.lines||[]).map(l=>({text:(l.text||'').replace(/\s+/g,' ').trim(),box:l.bbox||{},confidence:l.confidence||0})).filter(l=>l.text);
+ const rows=raw.filter(l=>Number.isFinite(l.box.y0)&&Number.isFinite(l.box.y1));
+ if(!rows.length)return '';
+ const bottom=rows.find(l=>/スタンダード/.test(l.text));
+ const limit=bottom?bottom.box.y0:Infinity;
+ const width=Math.max(...rows.map(l=>l.box.x1||0),1);
+ const heights=rows.map(l=>l.box.y1-l.box.y0).filter(h=>h>3).sort((a,b)=>a-b);
+ const median=heights[Math.floor(heights.length/2)]||20;
+ const rejected=/^(?:\d{1,2}:\d{2}|\d+%|[0-9: .]+|.*(?:cf-vanguard\.com|github\.io|https?:|www\.|ヴァンガード|カードファイト|検索結果一覧|カード検索|カードリスト|メニュー|MENU|スタンダード|グレード|パワー|シールド|クリティカル|ペルソナシリーズ|ペルソナトークン|その他|進化:|【永】|【自】|【起】|©|AT LUS|SEGA).*)$/i;
+ const candidates=rows.filter(l=>{
+  const t=l.text.replace(/\s*[（(][^）)]{1,35}[）)]\s*$/,'').trim();
+  const h=l.box.y1-l.box.y0;
+  return l.box.y1<limit && /[ぁ-んァ-ヶ一-龠]/.test(t) && t.length>=2 && t.length<=42 && !rejected.test(t) && !/^[\W\d]+$/.test(t) && h>=median*.85;
+ });
+ // タイトルは通常、サイト上部のナビゲーションの下、カード属性の上に大きな文字で置かれる。
+ // 高さを優先し、同じ程度なら「スタンダード」に近い見出しを選ぶ。
+ candidates.sort((a,b)=>{
+  const ah=a.box.y1-a.box.y0,bh=b.box.y1-b.box.y0;
+  const aScore=ah/median*3 + (a.box.x0>width*.15&&a.box.x1<width*.9?1:0) + (limit<Infinity?Math.max(0,1-(limit-a.box.y1)/Math.max(limit,1)):0);
+  const bScore=bh/median*3 + (b.box.x0>width*.15&&b.box.x1<width*.9?1:0) + (limit<Infinity?Math.max(0,1-(limit-b.box.y1)/Math.max(limit,1)):0);
+  return bScore-aScore;
+ });
+ if(!candidates.length)return '';
+ const best=candidates[0];
+ // 疑わしい行を自動入力しない。読み取れなければ手入力。
+ if(best.confidence<35)return '';
+ return best.text.replace(/\s*[（(][^）)]{1,35}[）)]\s*$/,'').trim();
 }
 $('scanDetail').onclick=async()=>{
  const file=$('detailFile').files[0];if(!file)return alert('公式サイトの詳細画面スクリーンショットを選択してください');
  const btn=$('scanDetail');btn.disabled=true;btn.textContent='読み取り中…';ocrStatus('読み取りを開始しています…');
  try{
-  const fullText=await recognize(file);
+  const ocr=await recognize(file);
+  const fullText=ocr.text||'';
   if(!fullText.trim())throw Error('OCRで文字を検出できませんでした。画像の鮮明さを確認してください');
   ocrStatus('認識文字からカード情報を抽出中…');
   const parsed=extractDetail(fullText);
+  parsed.name=findHeadingName(ocr);
   if(parsed.name)$('cardName').value=parsed.name;
+  else $('detailStatus').textContent='カード名の見出しを確実に特定できませんでした。手入力してください。';
   if(parsed.cardNo)$('cardNo').value=parsed.cardNo;
   if(parsed.rarity)$('rarity').value=parsed.rarity;
-  $('detailText').textContent='【読み取り全文】\n'+fullText;
+  $('detailText').textContent='【読み取り全文】\n'+fullText+'\n\n【見出し候補（OCR行）】\n'+(ocr.lines||[]).filter(l=>/[ぁ-んァ-ヶ一-龠]/.test(l.text||'')).slice(0,30).map(l=>`${l.text} / y=${l.bbox?.y0||0} / confidence=${Math.round(l.confidence||0)}`).join('\n');
   $('detailDebug').classList.remove('hidden');
   $('detailStatus').textContent=`候補：名前 ${parsed.name||'未検出'} / 番号 ${parsed.cardNo||'未検出'} / レアリティ ${parsed.rarity||'未検出'}。必ず確認・修正してください。`;
  }catch(e){$('detailStatus').textContent='読み取り失敗：'+e.message+'。手入力で登録できます。'}finally{btn.disabled=false;btn.textContent='詳細画面から名前・番号・レアリティを読み取る'}

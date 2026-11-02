@@ -1,3 +1,6 @@
-CARD PRICE FINDER v1.3 test
-OCR progress and diagnostic fixes.
-If fields are empty, open 読み取り文字を確認 to distinguish OCR failure from parsing failure.
+CPF v1.4 TEST
+- Card name: OCR heading detection based on line geometry and context (not first OCR text).
+- Exclude phone time, URL and site navigation.
+- Card number and rarity parsing unchanged.
+- Manual edits, crop, progress and diagnostic text retained.
+- Keep existing icon files in GitHub; upload all five files from ZIP.
