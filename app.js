@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id), KEY='cpf_v2';
 const defaults=['トレカプラザ55 大須アメ横店','カードラボ 名古屋大須店','ホビーステーション 名古屋大須本店','イエローサブマリン 名古屋GAME SHOP','GIRAFULL 名古屋大須店'];
 const uid=()=>crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random();
 let data=load(),editId=null,cardImage=null,cardFile=null,ocrBusy=false,scans=[];
-function load(){try{let d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.cards)&&Array.isArray(d.prices)){d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];return d}}catch(e){}return {cards:[],prices:[],shops:defaults.map((name,i)=>({id:'s'+i,name})),sold:[]}}
+function load(){try{let d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.cards)&&Array.isArray(d.prices)){d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];d.shopMemos=Array.isArray(d.shopMemos)?d.shopMemos:[];return d}}catch(e){}return {cards:[],prices:[],shops:defaults.map((name,i)=>({id:'s'+i,name})),sold:[],shopMemos:[]}}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));render();return true}catch(e){alert('保存できませんでした。画像容量やSafariの保存領域をご確認ください。バックアップを推奨します。');return false}}
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const yen=n=>'¥'+Math.round(Number(n||0)).toLocaleString('ja-JP');
@@ -12,9 +12,9 @@ const getCard=id=>data.cards.find(c=>c.id===id);
 function tab(id){document.querySelectorAll('.view').forEach(e=>e.classList.toggle('hidden',e.id!==id));document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active',e.dataset.tab===id));}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 function options(id,old){let e=$(id);e.innerHTML=data.cards.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} ${esc(c.rarity||'')}</option>`).join('');if(old&&data.cards.some(c=>c.id===old))e.value=old}
-function render(){const sels=['mercariTarget','compareTarget','priceTarget','marketTarget'];sels.forEach(id=>options(id,$(id).value));$('cardList').innerHTML=data.cards.length?data.cards.map(c=>`<div class="item"><div class="cardrow">${c.image?`<img class="thumb" src="${c.image}" alt="カード画像">`:'<div class="thumb"></div>'}<div style="min-width:0;flex:1"><div class="name">${esc(c.name)}</div><div class="muted">${esc(c.cardNo||'番号未登録')} / ${esc(c.rarity||'レアリティ未登録')}</div><div class="chip">必要 ${Number(c.wanted)||1} 枚</div> <span class="chip">${esc(c.priority||'中')}</span><div class="muted">${esc(c.version||'')}</div></div></div><div class="actions"><button class="secondary" data-edit="${esc(c.id)}">編集</button><button class="secondary" data-sold="${esc(c.id)}">相場を見る</button><button class="danger" data-del="${esc(c.id)}">削除</button></div></div>`).join(''):'<p class="muted">まだカードがありません。</p>';
-$('cardList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editCard(b.dataset.edit));$('cardList').querySelectorAll('[data-sold]').forEach(b=>b.onclick=()=>{openMarket(b.dataset.sold)});$('cardList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(confirm('カードと紐づく価格・売却データを削除しますか？')){data.cards=data.cards.filter(c=>c.id!==b.dataset.del);data.prices=data.prices.filter(p=>p.cardId!==b.dataset.del);data.sold=data.sold.filter(p=>p.cardId!==b.dataset.del);persist()}});
-renderSold();renderLinks();renderPrices();renderShopComparison();renderMarketOverview();renderShops();}
+function render(){const sels=['mercariTarget','compareTarget','priceTarget','marketTarget','overallTarget','memoCard'];sels.forEach(id=>options(id,$(id).value));$('cardList').innerHTML=data.cards.length?data.cards.map(c=>`<div class="item"><div class="cardrow">${c.image?`<img class="thumb" src="${c.image}" alt="カード画像">`:'<div class="thumb"></div>'}<div style="min-width:0;flex:1"><div class="name">${esc(c.name)}</div><div class="muted">${esc(c.cardNo||'番号未登録')} / ${esc(c.rarity||'レアリティ未登録')}</div><div class="chip">必要 ${Number(c.wanted)||1} 枚</div> <span class="chip">${esc(c.priority||'中')}</span><div class="muted">${esc(c.version||'')}</div></div></div><div class="actions"><button class="secondary" data-edit="${esc(c.id)}">編集</button><button class="secondary" data-sold="${esc(c.id)}">相場を見る</button><button class="danger" data-del="${esc(c.id)}">削除</button></div></div>`).join(''):'<p class="muted">まだカードがありません。</p>';
+$('cardList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editCard(b.dataset.edit));$('cardList').querySelectorAll('[data-sold]').forEach(b=>b.onclick=()=>{openMarket(b.dataset.sold)});$('cardList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(confirm('カードと紐づく価格・売却データを削除しますか？')){data.cards=data.cards.filter(c=>c.id!==b.dataset.del);data.prices=data.prices.filter(p=>p.cardId!==b.dataset.del);data.sold=data.sold.filter(p=>p.cardId!==b.dataset.del);data.shopMemos=data.shopMemos.filter(p=>p.cardId!==b.dataset.del);persist()}});
+renderSold();renderLinks();renderPrices();renderShopComparison();renderMarketOverview();renderShops();renderShopMemos();renderOverall();}
 function resetCard(){editId=null;cardImage=null;cardFile=null;$('formTitle').textContent='カードを登録';['cardName','cardNo','rarity','version'].forEach(x=>$(x).value='');$('wanted').value=1;$('priority').value='中';$('cardFile').value='';$('detailFile').value='';$('detailDebug').classList.add('hidden');$('detailStatus').textContent='';detailBitmap=null;$('detailCropBox').classList.add('hidden');$('cropPanel').classList.add('hidden');$('cancelEdit').classList.add('hidden');$('cardOcrStatus').textContent='';}
 function editCard(id){let c=getCard(id);if(!c)return;editId=id;cardImage=c.image||null;cardFile=null;$('formTitle').textContent='カードを編集';['name','cardNo','rarity','version','wanted','priority'].forEach(k=>$(k==='name'?'cardName':k).value=c[k]??(k==='wanted'?1:''));$('cardFile').value='';$('detailFile').value='';$('detailDebug').classList.add('hidden');$('detailStatus').textContent='';detailBitmap=null;$('detailCropBox').classList.add('hidden');$('cropPanel').classList.toggle('hidden',!c.image);$('cardPreview').src=c.image||'';$('cancelEdit').classList.remove('hidden');tab('wishlist');window.scrollTo(0,0)}
 $('cancelEdit').onclick=resetCard;
@@ -48,7 +48,7 @@ function renderPrices(){let id=$('compareTarget').value,rows=data.prices.filter(
 function renderShops(){$('shopSettings').innerHTML=data.shops.map(s=>`<div class="row item"><span>${esc(s.name)}</span><button class="danger" data-shop-del="${esc(s.id)}">削除</button></div>`).join('');$('shopSettings').querySelectorAll('[data-shop-del]').forEach(b=>b.onclick=()=>{data.shops=data.shops.filter(s=>s.id!==b.dataset.shopDel);persist()})}
 $('addShop').onclick=()=>{let n=$('newShop').value.trim();if(n){data.shops.push({id:uid(),name:n});$('newShop').value='';persist()}};
 $('export').onclick=()=>{let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='cpf-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let d=JSON.parse(await f.text());if(!Array.isArray(d.cards)||!Array.isArray(d.prices))throw Error('バックアップ形式が違います');if(!confirm('現在のデータをバックアップの内容で置き換えますか？'))return;d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];let prev=data;data=d;if(!persist())data=prev;else resetCard()}catch(err){alert('読み込みに失敗: '+err.message)}finally{e.target.value=''}};
+$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let d=JSON.parse(await f.text());if(!Array.isArray(d.cards)||!Array.isArray(d.prices))throw Error('バックアップ形式が違います');if(!confirm('現在のデータをバックアップの内容で置き換えますか？'))return;d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];d.shopMemos=Array.isArray(d.shopMemos)?d.shopMemos:[];let prev=data;data=d;if(!persist())data=prev;else resetCard()}catch(err){alert('読み込みに失敗: '+err.message)}finally{e.target.value=''}};
 render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
 
@@ -221,6 +221,7 @@ function renderShopComparison(){
       const best=valid&&p.stock!=='売り切れ'&&min!==null&&total===min;
       return '<tr style="border-top:1px solid #55462c"><td>'+esc(name)+(best?' <b class="gold">最安</b>':'')+'</td><td>'+(valid?yen(p.price):'未確認')+'</td><td>'+(valid?yen(p.shipping):'—')+'</td><td>'+(valid?yen(total):'—')+'</td><td>'+esc(p?.stock||'未確認')+'</td><td><button class="secondary" data-quick-shop="'+esc(name)+'">入力</button></td></tr>';
     }).join('')+'</tbody></table></div><p class="muted">最安表示は登録済みデータのみが対象です。送料未確認・在庫なしは最安判定から除外してください。</p>';
+  target.querySelectorAll('[data-quick-delete]').forEach(btn=>btn.onclick=()=>{if(confirm('この店舗の価格・送料記録を削除しますか？')){data.prices=data.prices.filter(p=>p.id!==btn.dataset.quickDelete);persist();}});
   target.querySelectorAll('[data-quick-shop]').forEach(btn=>btn.onclick=()=>{
     const name=btn.dataset.quickShop;
     $('priceTarget').value=cardId;
@@ -259,3 +260,55 @@ function renderMarketOverview(){
     '<div class="market-stats"><div class="market-stat"><small>通販最安値（送料込み）</small><strong>'+(best===null?'未登録':yen(best))+'</strong></div><div class="market-stat"><small>メルカリ参考価格（最新メモ）</small><strong>'+(memo.length?yen(memo[0].price):'未登録')+'</strong></div></div>';
 }
 $('marketTarget').onchange=()=>selectMarketCard($('marketTarget').value);
+
+
+// v2.4 shop notes and cross-channel comparison (local data only).
+const memoDateInput=$('memoDate');
+memoDateInput.value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+function renderShopMemos(){
+  const buttons=$('memoShopButtons'),logs=$('memoLogs');
+  buttons.innerHTML=data.shops.map(x=>'<button type="button" class="secondary" data-memo-shop="'+esc(x.id)+'">'+esc(x.name)+'</button>').join('');
+  buttons.querySelectorAll('[data-memo-shop]').forEach(b=>b.onclick=()=>{
+    const shop=data.shops.find(x=>x.id===b.dataset.memoShop);if(shop)$('memoShopName').value=shop.name;
+  });
+  logs.innerHTML=(data.shopMemos||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||(b.created||0)-(a.created||0)).map(m=>{
+    const c=getCard(m.cardId);
+    return '<div class="item"><div class="row"><b>'+esc(m.shop)+'</b><span class="muted">'+esc(m.date||'日付不明')+'</span></div><div>'+esc(c?.name||'削除されたカード')+' / <b class="gold">'+yen(m.price)+'</b></div><p class="muted">'+esc(m.note||'')+'</p><div class="actions"><button class="danger" data-memo-del="'+esc(m.id)+'">削除</button></div></div>';
+  }).join('')||'<p class="muted">まだ店舗価格メモはありません。</p>';
+  logs.querySelectorAll('[data-memo-del]').forEach(b=>b.onclick=()=>{
+    if(confirm('この店舗価格メモを削除しますか？')){data.shopMemos=data.shopMemos.filter(m=>m.id!==b.dataset.memoDel);persist();}
+  });
+}
+$('memoSave').onclick=()=>{
+  const cardId=$('memoCard').value,shop=$('memoShopName').value.trim(),raw=$('memoPrice').value;
+  const price=Number(raw),date=$('memoDate').value;
+  if(!cardId||!shop||raw===''||!Number.isFinite(price)||price<0||!date)return alert('カード・店舗・価格・日付を入力してください');
+  data.shopMemos.push({id:uid(),cardId,shop,price,date,note:$('memoNote').value.trim(),created:Date.now()});
+  if(persist()){$('memoPrice').value='';$('memoNote').value='';}
+};
+$('overallTarget').onchange=renderOverall;
+function renderOverall(){
+  const target=$('overallResults'),id=$('overallTarget').value;
+  if(!id){target.innerHTML='<p class="muted">カードを登録してください。</p>';return;}
+  const prices=data.prices.filter(p=>p.cardId===id&&p.stock!=='売り切れ'&&p.price!==''&&Number.isFinite(Number(p.price))&&Number(p.price)>=0);
+  const online=prices.filter(p=>p.kind==='online'&&p.shipping!==''&&Number.isFinite(Number(p.shipping))&&Number(p.shipping)>=0).map(p=>({label:p.source||'通販（名称未入力）',value:Number(p.price)+Number(p.shipping),type:'通販'}));
+  const store=prices.filter(p=>p.kind==='store').map(p=>({label:p.source||'店頭（名称未入力）',value:Number(p.price),type:'店頭'}));
+  // Shop log is a dated observation. Only latest observation per shop is compared.
+  const latest=new Map();
+  (data.shopMemos||[]).filter(m=>m.cardId===id&&Number.isFinite(Number(m.price))&&Number(m.price)>=0).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||(b.created||0)-(a.created||0)).forEach(m=>{if(!latest.has(m.shop))latest.set(m.shop,m)});
+  const logStore=[...latest.values()].map(m=>({label:m.shop+'（'+m.date+'）',value:Number(m.price),type:'店頭'}));
+  // Avoid counting duplicate shop entries from the price form and the shop log.
+  const shopKeys=new Set(logStore.map(x=>x.label.replace(/（.*$/,'')));
+  const storeAll=[...store.filter(x=>!shopKeys.has(x.label)),...logStore];
+  const mercari=(data.sold||[]).filter(p=>p.cardId===id&&Number.isFinite(Number(p.price))&&Number(p.price)>0).map(p=>({label:'メルカリ参考メモ',value:Number(p.price),type:'メルカリ'}));
+  const groups=[['通販',online],['メルカリ',mercari],['店頭',storeAll]];
+  const values=groups.map(([name,arr])=>({name,arr,median:median(arr.map(x=>x.value))}));
+  const typical=median(values.filter(x=>x.median!==null).map(x=>x.median));
+  const all=groups.flatMap(([,arr])=>arr).sort((a,b)=>a.value-b.value);
+  const cheapest=all[0];
+  target.innerHTML='<div class="market-stats"><div class="market-stat"><small>3種総合の参考相場（中央値）</small><strong>'+(typical===null?'未登録':yen(typical))+'</strong></div><div class="market-stat"><small>登録情報での最安値</small><strong>'+(cheapest?yen(cheapest.value):'未登録')+'</strong></div></div>'+
+    (cheapest?'<p class="notice">最安：'+esc(cheapest.type)+' / '+esc(cheapest.label)+' / '+yen(cheapest.value)+'</p>':'')+
+    '<div style="overflow-x:auto"><table style="width:100%;font-size:13px"><thead><tr><th>種類</th><th>登録数</th><th>中央値</th><th>最安値</th></tr></thead><tbody>'+
+    values.map(x=>'<tr><td>'+x.name+'</td><td>'+x.arr.length+'</td><td>'+(x.median===null?'未登録':yen(x.median))+'</td><td>'+(x.arr.length?yen(Math.min(...x.arr.map(y=>y.value))):'未登録')+'</td></tr>').join('')+'</tbody></table></div>'+
+    '<p class="muted">※登録した参考価格を比較したもので、リアルタイムの在庫や販売価格を保証しません。店頭ログは店舗ごとの最新記録を使用します。</p>';
+}
