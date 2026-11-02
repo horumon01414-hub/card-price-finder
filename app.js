@@ -44,9 +44,17 @@ render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.j
 
 // OCR is performed locally in the browser. Japanese language data may download on first use.
 let ocrWorker=null;
+function ocrStatus(message){$('detailStatus').textContent=message;}
 async function recognize(source){
- if(!window.Tesseract)throw Error('OCRライブラリを読み込めません。インターネット接続を確認してください');
- if(!ocrWorker)ocrWorker=await Tesseract.createWorker('jpn+eng',1);
+ if(!window.Tesseract)throw Error('OCRライブラリが読み込めません。オンラインで再度開いてください');
+ if(!ocrWorker){
+  ocrStatus('OCRの準備中：日本語・英語の認識データを読み込んでいます…（初回は時間がかかります）');
+  ocrWorker=await Tesseract.createWorker('jpn+eng',1,{logger:m=>{
+   if(m.status==='recognizing text')ocrStatus('文字を認識中… '+Math.round((m.progress||0)*100)+'%');
+   else if(m.status==='loading language traineddata')ocrStatus('日本語認識データを読み込み中… '+Math.round((m.progress||0)*100)+'%');
+  }});
+ }
+ ocrStatus('画像の文字を解析しています…');
  const result=await ocrWorker.recognize(source);
  return result.data.text||'';
 }
@@ -73,9 +81,11 @@ function extractDetail(fullText){
 }
 $('scanDetail').onclick=async()=>{
  const file=$('detailFile').files[0];if(!file)return alert('公式サイトの詳細画面スクリーンショットを選択してください');
- const btn=$('scanDetail');btn.disabled=true;$('detailStatus').textContent='詳細画面の文字列を解析しています…';
+ const btn=$('scanDetail');btn.disabled=true;btn.textContent='読み取り中…';ocrStatus('読み取りを開始しています…');
  try{
   const fullText=await recognize(file);
+  if(!fullText.trim())throw Error('OCRで文字を検出できませんでした。画像の鮮明さを確認してください');
+  ocrStatus('認識文字からカード情報を抽出中…');
   const parsed=extractDetail(fullText);
   if(parsed.name)$('cardName').value=parsed.name;
   if(parsed.cardNo)$('cardNo').value=parsed.cardNo;
@@ -83,5 +93,5 @@ $('scanDetail').onclick=async()=>{
   $('detailText').textContent='【読み取り全文】\n'+fullText;
   $('detailDebug').classList.remove('hidden');
   $('detailStatus').textContent=`候補：名前 ${parsed.name||'未検出'} / 番号 ${parsed.cardNo||'未検出'} / レアリティ ${parsed.rarity||'未検出'}。必ず確認・修正してください。`;
- }catch(e){$('detailStatus').textContent='読み取り失敗：'+e.message+'。手入力で登録できます。'}finally{btn.disabled=false}
+ }catch(e){$('detailStatus').textContent='読み取り失敗：'+e.message+'。手入力で登録できます。'}finally{btn.disabled=false;btn.textContent='詳細画面から名前・番号・レアリティを読み取る'}
 };

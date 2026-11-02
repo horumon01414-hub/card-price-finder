@@ -1,6 +1,3 @@
-CARD PRICE FINDER v1.2 TEST
-- メルカリ画像OCRを削除。参考価格とメモを手動保存・編集・削除。
-- 公式サイトの詳細画像は全体OCRのテキスト順・「スタンダード」ラベル・番号右のレアリティで解析。
-- カード画像の白背景自動切り抜き、通販5店＋楽天＋Amazon検索は維持。
-- OCRは誤認識する場合があります。保存前に必ず確認してください。
-- 保存データのキー cpf_v2 は変更していません。
+CARD PRICE FINDER v1.3 test
+OCR progress and diagnostic fixes.
+If fields are empty, open 読み取り文字を確認 to distinguish OCR failure from parsing failure.
