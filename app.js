@@ -42,6 +42,55 @@ $('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=asyn
 render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
 
+// Detail screenshot cropping is separate from the card-art white-background crop.
+let detailBitmap=null,detailBounds={x:0,y:0,w:1,h:1},detailDrag=null;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function detailSelectionRender(){
+ const stage=$('detailCropStage'),sel=$('detailCropSelection');
+ const w=stage.clientWidth,h=$('detailCropImage').clientHeight;
+ Object.assign(sel.style,{left:(detailBounds.x*100)+'%',top:(detailBounds.y*100)+'%',width:(detailBounds.w*100)+'%',height:(detailBounds.h*100)+'%'});
+ $('detailCropInfo').textContent='選択範囲：横 '+Math.round(detailBounds.w*100)+'%・縦 '+Math.round(detailBounds.h*100)+'%（枠内のみOCR）';
+}
+function detailReset(){detailBounds={x:0,y:0,w:1,h:1};detailSelectionRender()}
+$('detailCropReset').onclick=detailReset;
+$('detailFile').addEventListener('change',async()=>{
+ detailBitmap=null;$('detailCropBox').classList.add('hidden');
+ const file=$('detailFile').files[0];if(!file)return;
+ try{detailBitmap=await loadImage(file);$('detailCropImage').src=URL.createObjectURL(file);detailBounds={x:0,y:0,w:1,h:1};$('detailCropBox').classList.remove('hidden');
+ $('detailCropImage').onload=()=>detailSelectionRender();ocrStatus('画像を読み込みました。指でOCR範囲を指定してください。');}
+ catch(e){ocrStatus('詳細画像を開けません：'+e.message)}
+});
+const cropStage=$('detailCropStage');
+function normalizedPointer(e){const r=$('detailCropImage').getBoundingClientRect();return {x:clamp((e.clientX-r.left)/r.width,0,1),y:clamp((e.clientY-r.top)/r.height,0,1)}}
+cropStage.addEventListener('pointerdown',e=>{if(!detailBitmap)return;e.preventDefault();cropStage.setPointerCapture(e.pointerId);detailDrag=normalizedPointer(e);detailBounds={x:detailDrag.x,y:detailDrag.y,w:0,h:0};detailSelectionRender()});
+cropStage.addEventListener('pointermove',e=>{if(!detailDrag)return;e.preventDefault();const p=normalizedPointer(e);detailBounds={x:Math.min(p.x,detailDrag.x),y:Math.min(p.y,detailDrag.y),w:Math.abs(p.x-detailDrag.x),h:Math.abs(p.y-detailDrag.y)};detailSelectionRender()});
+cropStage.addEventListener('pointerup',e=>{if(!detailDrag)return;detailDrag=null;if(detailBounds.w<.04||detailBounds.h<.04)detailReset();else detailSelectionRender()});
+cropStage.addEventListener('pointercancel',()=>{detailDrag=null;detailReset()});
+function detailOcrCanvas(){
+ if(!detailBitmap)throw Error('詳細画像を選択してください');
+ const b=detailBounds,im=detailBitmap;
+ const sx=Math.round(b.x*im.naturalWidth),sy=Math.round(b.y*im.naturalHeight),sw=Math.max(1,Math.round(b.w*im.naturalWidth)),sh=Math.max(1,Math.round(b.h*im.naturalHeight));
+ const scale=Math.min(2.5,Math.max(1,1700/sw));const canvas=document.createElement('canvas');canvas.width=Math.round(sw*scale);canvas.height=Math.round(sh*scale);
+ const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(im,sx,sy,sw,sh,0,0,canvas.width,canvas.height);return canvas;
+}
+function normalizeHeading(raw){
+ let s=raw.replace(/[\u200b-\u200d]/g,'').replace(/[　\s]+/g,'').replace(/[（(][^）)]{1,35}[）)]/g,'');
+ // Discard isolated Latin OCR artifacts at the end (e.g. "ロビ ン フ ッ ド Gy").
+ s=s.replace(/[A-Za-z][A-Za-z0-9]{0,5}$/,'').replace(/^[^ぁ-んァ-ヶ一-龠]+|[^ぁ-んァ-ヶ一-龠ー・]+$/g,'');
+ return s;
+}
+function plausibleHeading(t){return t.length>=2&&t.length<=35&&/[ァ-ヶ一-龠]/.test(t)&&!/(?:その他|ペルソナ|グレード|パワー|シールド|クリティカル|スタンダード|進化|スキル|カード|質問|検索|ヴァンガード|あなた|ターン中)/.test(t)}
+function findHeadingNameV16(ocr){
+ const raw=(ocr.text||'').split(/\n/).map(t=>t.trim()).filter(Boolean);
+ const anchor=raw.findIndex(t=>/その他|ペルソナシリーズ|ペルソナトークン/.test(t.replace(/\s/g,'')));
+ if(anchor>=0){for(let i=anchor-1;i>=Math.max(0,anchor-3);i--){const candidate=normalizeHeading(raw[i]);if(plausibleHeading(candidate))return candidate}}
+ // A line that looks like a short Japanese card heading, above attributes/skill paragraphs.
+ const candidates=(ocr.lines||[]).map(l=>({raw:l.text||'',confidence:l.confidence||0,y:l.bbox?.y0||0})).filter(l=>l.confidence>=45).map(l=>({...l,name:normalizeHeading(l.raw)})).filter(l=>plausibleHeading(l.name)&&l.name.length<=20);
+ if(candidates.length){const attrs=(ocr.lines||[]).filter(l=>/その他|ペルソナ/.test((l.text||'').replace(/\s/g,'')));if(attrs.length){const y=Math.min(...attrs.map(l=>l.bbox?.y0||0));const before=candidates.filter(c=>c.y<y).sort((a,b)=>b.y-a.y);if(before.length)return before[0].name}}
+ // Avoid guessing from UI/skill text if there is no recognizable heading.
+ return '';
+}
+
 // OCR is performed locally in the browser. Japanese language data may download on first use.
 let ocrWorker=null;
 function ocrStatus(message){$('detailStatus').textContent=message;}
@@ -100,17 +149,17 @@ $('scanDetail').onclick=async()=>{
  const file=$('detailFile').files[0];if(!file)return alert('公式サイトの詳細画面スクリーンショットを選択してください');
  const btn=$('scanDetail');btn.disabled=true;btn.textContent='読み取り中…';ocrStatus('読み取りを開始しています…');
  try{
-  const ocr=await recognize(file);
+  const ocr=await recognize(detailOcrCanvas());
   const fullText=ocr.text||'';
   if(!fullText.trim())throw Error('OCRで文字を検出できませんでした。画像の鮮明さを確認してください');
   ocrStatus('認識文字からカード情報を抽出中…');
   const parsed=extractDetail(fullText);
-  parsed.name=findHeadingName(ocr);
+  parsed.name=findHeadingNameV16(ocr);
   if(parsed.name)$('cardName').value=parsed.name;
   else $('detailStatus').textContent='カード名の見出しを確実に特定できませんでした。手入力してください。';
   if(parsed.cardNo)$('cardNo').value=parsed.cardNo;
   if(parsed.rarity)$('rarity').value=parsed.rarity;
-  $('detailText').textContent='【カード名抽出方法：属性行『その他』の直前を優先】\n【読み取り全文】\n'+fullText+'\n\n【見出し候補（OCR行）】\n'+(ocr.lines||[]).filter(l=>/[ぁ-んァ-ヶ一-龠]/.test(l.text||'')).slice(0,30).map(l=>`${l.text} / y=${l.bbox?.y0||0} / confidence=${Math.round(l.confidence||0)}`).join('\n');
+  $('detailText').textContent='【カード名抽出方法：トリミング後の属性行直前・空白除去】\n【読み取り全文】\n'+fullText+'\n\n【見出し候補（OCR行）】\n'+(ocr.lines||[]).filter(l=>/[ぁ-んァ-ヶ一-龠]/.test(l.text||'')).slice(0,30).map(l=>`${l.text} / y=${l.bbox?.y0||0} / confidence=${Math.round(l.confidence||0)}`).join('\n');
   $('detailDebug').classList.remove('hidden');
   $('detailStatus').textContent=`候補：名前 ${parsed.name||'未検出'} / 番号 ${parsed.cardNo||'未検出'} / レアリティ ${parsed.rarity||'未検出'}。必ず確認・修正してください。`;
  }catch(e){$('detailStatus').textContent='読み取り失敗：'+e.message+'。手入力で登録できます。'}finally{btn.disabled=false;btn.textContent='詳細画面から名前・番号・レアリティを読み取る'}
