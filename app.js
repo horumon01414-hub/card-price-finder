@@ -33,7 +33,7 @@ function renderLinks(){
   const term=cardNo||String(c?.name||'').trim();
   const mk=(name,url)=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(name)} ↗</a>`;
   $('shopLinks').innerHTML=shopNames.map(([n])=>mk(n,comparisonSearchUrl(n,c))).join('')+
-    mk('その他','https://www.google.com/search?q='+encodeURIComponent('ヴァンガード '+String(c?.name||'').trim()+' 通販'));
+    mk('その他','https://www.google.com/search?q='+encodeURIComponent('ヴァンガード '+String(c?.number||'').trim()+' 通販'));
   const query='ヴァンガード '+term;
   $('marketLinks').innerHTML=mk('楽天市場','https://search.rakuten.co.jp/search/mall/?sitem='+encodeURIComponent(query))+
     mk('Amazon','https://www.amazon.co.jp/s?k='+encodeURIComponent(query));
