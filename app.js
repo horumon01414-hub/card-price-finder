@@ -75,12 +75,20 @@ $('detailFile').addEventListener('change',async()=>{
 });
 const cropStage=$('detailCropStage');
 const MIN_CROP=.08;
-function normalizedPointer(e){const r=$('detailCropImage').getBoundingClientRect();return {x:clamp((e.clientX-r.left)/Math.max(1,r.width),0,1),y:clamp((e.clientY-r.top)/Math.max(1,r.height),0,1)}}
-function cropHit(p){const b=detailBounds,margin=.045;const corners=[['nw',b.x,b.y],['ne',b.x+b.w,b.y],['sw',b.x,b.y+b.h],['se',b.x+b.w,b.y+b.h]];for(const [mode,x,y] of corners){if(Math.abs(p.x-x)<margin&&Math.abs(p.y-y)<margin)return mode}if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h)return 'move';return null}
-cropStage.addEventListener('pointerdown',e=>{if(!detailBitmap||detailDrag)return;const p=normalizedPointer(e),mode=cropHit(p);if(!mode)return;e.preventDefault();try{cropStage.setPointerCapture(e.pointerId)}catch(_){}detailDrag={id:e.pointerId,mode,start:p,original:{...detailBounds}}});
-cropStage.addEventListener('pointermove',e=>{if(!detailDrag||detailDrag.id!==e.pointerId)return;e.preventDefault();const p=normalizedPointer(e),d=detailDrag,b=d.original,dx=p.x-d.start.x,dy=p.y-d.start.y;let left=b.x,top=b.y,right=b.x+b.w,bottom=b.y+b.h;if(d.mode==='move'){left=clamp(b.x+dx,0,1-b.w);top=clamp(b.y+dy,0,1-b.h);right=left+b.w;bottom=top+b.h}else{if(d.mode.includes('w'))left=clamp(b.x+dx,0,right-MIN_CROP);if(d.mode.includes('e'))right=clamp(b.x+b.w+dx,left+MIN_CROP,1);if(d.mode.includes('n'))top=clamp(b.y+dy,0,bottom-MIN_CROP);if(d.mode.includes('s'))bottom=clamp(b.y+b.h+dy,top+MIN_CROP,1)}detailBounds={x:left,y:top,w:right-left,h:bottom-top};detailSelectionRender()});
-function endDrag(e){if(detailDrag&&detailDrag.id===e.pointerId){detailDrag=null;detailSelectionRender()}}
-cropStage.addEventListener('pointerup',endDrag);cropStage.addEventListener('pointercancel',endDrag);
+// Use native touch events on iOS Safari/PWA, with mouse fallback on desktop.
+// Dragging is attached to window so fingers leaving the selection don't cancel movement.
+function cropPoint(x,y){const r=$('detailCropImage').getBoundingClientRect();return {x:clamp((x-r.left)/Math.max(1,r.width),0,1),y:clamp((y-r.top)/Math.max(1,r.height),0,1)}}
+function cropHit(p){const b=detailBounds;const r=$('detailCropImage').getBoundingClientRect();const mx=Math.min(.12,28/Math.max(1,r.width)),my=Math.min(.12,28/Math.max(1,r.height));for(const [mode,x,y] of [['nw',b.x,b.y],['ne',b.x+b.w,b.y],['sw',b.x,b.y+b.h],['se',b.x+b.w,b.y+b.h]]){if(Math.abs(p.x-x)<=mx&&Math.abs(p.y-y)<=my)return mode}return p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h?'move':null}
+function beginCrop(x,y,kind,id){if(!detailBitmap||detailDrag)return false;const p=cropPoint(x,y),mode=cropHit(p);if(!mode)return false;detailDrag={kind,id,mode,start:p,original:{...detailBounds}};return true}
+function moveCrop(x,y){if(!detailDrag)return;const p=cropPoint(x,y),d=detailDrag,b=d.original,dx=p.x-d.start.x,dy=p.y-d.start.y;let left=b.x,top=b.y,right=b.x+b.w,bottom=b.y+b.h;if(d.mode==='move'){left=clamp(b.x+dx,0,1-b.w);top=clamp(b.y+dy,0,1-b.h);right=left+b.w;bottom=top+b.h}else{if(d.mode.includes('w'))left=clamp(b.x+dx,0,right-MIN_CROP);if(d.mode.includes('e'))right=clamp(b.x+b.w+dx,left+MIN_CROP,1);if(d.mode.includes('n'))top=clamp(b.y+dy,0,bottom-MIN_CROP);if(d.mode.includes('s'))bottom=clamp(b.y+b.h+dy,top+MIN_CROP,1)}detailBounds={x:left,y:top,w:right-left,h:bottom-top};detailSelectionRender()}
+function stopCrop(){if(!detailDrag)return;detailDrag=null;detailSelectionRender()}
+cropStage.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;const t=e.changedTouches[0];if(beginCrop(t.clientX,t.clientY,'touch',t.identifier))e.preventDefault()},{passive:false});
+window.addEventListener('touchmove',e=>{if(!detailDrag||detailDrag.kind!=='touch')return;const t=Array.from(e.changedTouches).find(t=>t.identifier===detailDrag.id);if(!t)return;e.preventDefault();moveCrop(t.clientX,t.clientY)},{passive:false});
+window.addEventListener('touchend',e=>{if(detailDrag&&detailDrag.kind==='touch'&&Array.from(e.changedTouches).some(t=>t.identifier===detailDrag.id))stopCrop()},{passive:false});
+window.addEventListener('touchcancel',e=>{if(detailDrag&&detailDrag.kind==='touch')stopCrop()},{passive:false});
+cropStage.addEventListener('mousedown',e=>{if(e.button!==0)return;if(beginCrop(e.clientX,e.clientY,'mouse',0))e.preventDefault()});
+window.addEventListener('mousemove',e=>{if(detailDrag&&detailDrag.kind==='mouse'){e.preventDefault();moveCrop(e.clientX,e.clientY)}});
+window.addEventListener('mouseup',()=>{if(detailDrag&&detailDrag.kind==='mouse')stopCrop()});
 function detailOcrCanvas(){
  if(!detailBitmap)throw Error('詳細画像を選択してください');
  const b=detailBounds,im=detailBitmap;
