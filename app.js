@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id), KEY='cpf_v2';
 const defaults=['トレカプラザ55 大須アメ横店','カードラボ 名古屋大須店','ホビーステーション 名古屋大須本店','イエローサブマリン 名古屋GAME SHOP','GIRAFULL 名古屋大須店'];
 const uid=()=>crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random();
 let data=load(),editId=null,cardImage=null,cardFile=null,ocrBusy=false,scans=[];
-function load(){try{let d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.cards)&&Array.isArray(d.prices)){d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];d.shopMemos=Array.isArray(d.shopMemos)?d.shopMemos:[];return d}}catch(e){}return {cards:[],prices:[],shops:defaults.map((name,i)=>({id:'s'+i,name})),sold:[],shopMemos:[]}}
+function load(){try{let d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.cards)&&Array.isArray(d.prices)){d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];d.shopMemos=Array.isArray(d.shopMemos)?d.shopMemos:[];d.customOnlineShops=Array.isArray(d.customOnlineShops)?d.customOnlineShops:[];return d}}catch(e){}return {cards:[],prices:[],shops:defaults.map((name,i)=>({id:'s'+i,name})),sold:[],shopMemos:[],customOnlineShops:[]}}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));render();return true}catch(e){alert('保存できませんでした。画像容量やSafariの保存領域をご確認ください。バックアップを推奨します。');return false}}
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const yen=n=>'¥'+Math.round(Number(n||0)).toLocaleString('ja-JP');
@@ -48,7 +48,7 @@ function renderPrices(){let id=$('compareTarget').value,rows=data.prices.filter(
 function renderShops(){$('shopSettings').innerHTML=data.shops.map(s=>`<div class="row item"><span>${esc(s.name)}</span><button class="danger" data-shop-del="${esc(s.id)}">削除</button></div>`).join('');$('shopSettings').querySelectorAll('[data-shop-del]').forEach(b=>b.onclick=()=>{data.shops=data.shops.filter(s=>s.id!==b.dataset.shopDel);persist()})}
 $('addShop').onclick=()=>{let n=$('newShop').value.trim();if(n){data.shops.push({id:uid(),name:n});$('newShop').value='';persist()}};
 $('export').onclick=()=>{let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='cpf-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let d=JSON.parse(await f.text());if(!Array.isArray(d.cards)||!Array.isArray(d.prices))throw Error('バックアップ形式が違います');if(!confirm('現在のデータをバックアップの内容で置き換えますか？'))return;d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];d.shopMemos=Array.isArray(d.shopMemos)?d.shopMemos:[];let prev=data;data=d;if(!persist())data=prev;else resetCard()}catch(err){alert('読み込みに失敗: '+err.message)}finally{e.target.value=''}};
+$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let d=JSON.parse(await f.text());if(!Array.isArray(d.cards)||!Array.isArray(d.prices))throw Error('バックアップ形式が違います');if(!confirm('現在のデータをバックアップの内容で置き換えますか？'))return;d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];d.shopMemos=Array.isArray(d.shopMemos)?d.shopMemos:[];d.customOnlineShops=Array.isArray(d.customOnlineShops)?d.customOnlineShops:[];let prev=data;data=d;if(!persist())data=prev;else resetCard()}catch(err){alert('読み込みに失敗: '+err.message)}finally{e.target.value=''}};
 render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
 
@@ -204,7 +204,7 @@ function renderShopComparison(){
   if(!target)return;
   const cardId=$('compareTarget').value;
   if(!cardId){target.innerHTML='<p class="muted">カードを登録してください。</p>';return;}
-  const names=shopNames.map(s=>s[0]);
+  const names=[...shopNames.map(s=>s[0]),...(data.customOnlineShops||[]).map(s=>s.name)];
   const records=data.prices.filter(p=>p.cardId===cardId&&p.kind==='online');
   const normalize=s=>String(s||'').replace(/[\s　]/g,'').toLowerCase();
   const rows=names.map(name=>{
@@ -219,8 +219,14 @@ function renderShopComparison(){
       const valid=p&&p.price!==''&&p.shipping!==''&&Number.isFinite(Number(p.price))&&Number.isFinite(Number(p.shipping));
       const total=valid?Number(p.price)+Number(p.shipping):null;
       const best=valid&&p.stock!=='売り切れ'&&min!==null&&total===min;
-      return '<tr style="border-top:1px solid #55462c"><td>'+esc(name)+(best?' <b class="gold">最安</b>':'')+'</td><td>'+(valid?yen(p.price):'未確認')+'</td><td>'+(valid?yen(p.shipping):'—')+'</td><td>'+(valid?yen(total):'—')+'</td><td>'+esc(p?.stock||'未確認')+'</td><td><button class="secondary" data-quick-shop="'+esc(name)+'">入力</button></td></tr>';
+      return '<tr style="border-top:1px solid #55462c"><td>'+esc(name)+(best?' <b class="gold">最安</b>':'')+((data.customOnlineShops||[]).find(x=>x.name===name)?.url?'<br><a target="_blank" rel="noopener noreferrer" href="'+esc(data.customOnlineShops.find(x=>x.name===name).url)+'">サイトを開く</a>':'')+'</td><td>'+(valid?yen(p.price):'未確認')+'</td><td>'+(valid?yen(p.shipping):'—')+'</td><td>'+(valid?yen(total):'—')+'</td><td>'+esc(p?.stock||'未確認')+'</td><td><button class="secondary" data-quick-shop="'+esc(name)+'">入力</button>'+(p?'<button class="danger" data-quick-delete="'+esc(p.id)+'">価格削除</button>':'')+((data.customOnlineShops||[]).some(x=>x.name===name)?'<button class="danger" data-custom-remove="'+esc(name)+'">サイト削除</button>':'')+'</td></tr>';
     }).join('')+'</tbody></table></div><p class="muted">最安表示は登録済みデータのみが対象です。送料未確認・在庫なしは最安判定から除外してください。</p>';
+  target.querySelectorAll('[data-custom-remove]').forEach(btn=>btn.onclick=()=>{
+    const name=btn.dataset.customRemove;
+    if(!confirm('「'+name+'」を比較表から削除しますか？登録済みの価格記録は残ります。'))return;
+    data.customOnlineShops=data.customOnlineShops.filter(x=>x.name!==name);
+    persist();
+  });
   target.querySelectorAll('[data-quick-delete]').forEach(btn=>btn.onclick=()=>{if(confirm('この店舗の価格・送料記録を削除しますか？')){data.prices=data.prices.filter(p=>p.id!==btn.dataset.quickDelete);persist();}});
   target.querySelectorAll('[data-quick-shop]').forEach(btn=>btn.onclick=()=>{
     const name=btn.dataset.quickShop;
@@ -312,3 +318,16 @@ function renderOverall(){
     values.map(x=>'<tr><td>'+x.name+'</td><td>'+x.arr.length+'</td><td>'+(x.median===null?'未登録':yen(x.median))+'</td><td>'+(x.arr.length?yen(Math.min(...x.arr.map(y=>y.value))):'未登録')+'</td></tr>').join('')+'</tbody></table></div>'+
     '<p class="muted">※登録した参考価格を比較したもので、リアルタイムの在庫や販売価格を保証しません。店頭ログは店舗ごとの最新記録を使用します。</p>';
 }
+
+// v2.5: manual custom online shops, independent of the existing in-store shop buttons.
+$('toggleCustomOnline').onclick=()=>{$('customOnlineForm').classList.toggle('hidden');};
+$('cancelCustomOnline').onclick=()=>{$('customOnlineForm').classList.add('hidden');};
+$('saveCustomOnline').onclick=()=>{
+  const name=$('customOnlineName').value.trim(),rawUrl=$('customOnlineUrl').value.trim();
+  if(!name)return alert('通販サイト名を入力してください');
+  if([...shopNames.map(x=>x[0]),...data.customOnlineShops.map(x=>x.name)].some(x=>x.replace(/\s/g,'').toLowerCase()===name.replace(/\s/g,'').toLowerCase()))return alert('同じ名前の通販サイトは登録済みです');
+  let url='';
+  if(rawUrl){try{const u=new URL(rawUrl);if(!['https:','http:'].includes(u.protocol))throw Error();url=u.href;}catch(e){return alert('URLはhttps://またはhttp://から入力してください');}}
+  data.customOnlineShops.push({id:uid(),name,url});
+  if(persist()){$('customOnlineName').value='';$('customOnlineUrl').value='';$('customOnlineForm').classList.add('hidden');}
+};
