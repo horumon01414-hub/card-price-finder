@@ -199,10 +199,21 @@ $('scanDetail').onclick=async()=>{
 
 
 // v2.0: 端末内の手動登録データだけを使った比較。外部サイトを自動取得しない。
+function comparisonSearchUrl(name,card){
+  const no=String(card?.cardNo||'').normalize('NFKC').replace(/[\s　]+/g,'').replace(/／/g,'/');
+  const term=no||String(card?.name||'').trim();
+  const fixed=shopNames.find(x=>x[0]===name);
+  if(fixed)return fixed[1]+encodeURIComponent(term);
+  const custom=(data.customOnlineShops||[]).find(x=>x.name===name);
+  // Custom shop: use a domain-restricted search, never fabricate a site's own search URL.
+  if(custom?.url){try{const u=new URL(custom.url);if(['https:','http:'].includes(u.protocol))return 'https://www.google.com/search?q='+encodeURIComponent('site:'+u.hostname+' '+term);}catch(e){}}
+  return 'https://www.google.com/search?q='+encodeURIComponent('ヴァンガード '+name+' '+term);
+}
 function renderShopComparison(){
   const target=$('shopCompareTable');
   if(!target)return;
   const cardId=$('compareTarget').value;
+  const card=getCard(cardId);
   if(!cardId){target.innerHTML='<p class="muted">カードを登録してください。</p>';return;}
   const names=[...shopNames.map(s=>s[0]),...(data.customOnlineShops||[]).map(s=>s.name)];
   const records=data.prices.filter(p=>p.cardId===cardId&&p.kind==='online');
@@ -219,7 +230,7 @@ function renderShopComparison(){
       const valid=p&&p.price!==''&&p.shipping!==''&&Number.isFinite(Number(p.price))&&Number.isFinite(Number(p.shipping));
       const total=valid?Number(p.price)+Number(p.shipping):null;
       const best=valid&&p.stock!=='売り切れ'&&min!==null&&total===min;
-      return '<tr style="border-top:1px solid #55462c"><td>'+esc(name)+(best?' <b class="gold">最安</b>':'')+((data.customOnlineShops||[]).find(x=>x.name===name)?.url?'<br><a target="_blank" rel="noopener noreferrer" href="'+esc(data.customOnlineShops.find(x=>x.name===name).url)+'">サイトを開く</a>':'')+'</td><td>'+(valid?yen(p.price):'未確認')+'</td><td>'+(valid?yen(p.shipping):'—')+'</td><td>'+(valid?yen(total):'—')+'</td><td>'+esc(p?.stock||'未確認')+'</td><td><button class="secondary" data-quick-shop="'+esc(name)+'">入力</button>'+(p?'<button class="danger" data-quick-delete="'+esc(p.id)+'">価格削除</button>':'')+((data.customOnlineShops||[]).some(x=>x.name===name)?'<button class="danger" data-custom-remove="'+esc(name)+'">サイト削除</button>':'')+'</td></tr>';
+      return '<tr style="border-top:1px solid #55462c"><td>'+esc(name)+(best?' <b class="quick-best">最安</b>':'')+((data.customOnlineShops||[]).find(x=>x.name===name)?.url?'<br><a target="_blank" rel="noopener noreferrer" href="'+esc(data.customOnlineShops.find(x=>x.name===name).url)+'">サイトを開く</a>':'')+'</td><td>'+(valid?yen(p.price):'未確認')+'</td><td>'+(valid?yen(p.shipping):'—')+'</td><td>'+(valid?'<span class="quick-total">'+yen(total)+'</span>':'—')+'</td><td>'+esc(p?.stock||'未確認')+'</td><td><a class="quick-search" href="'+esc(comparisonSearchUrl(name,card))+'" target="_blank" rel="noopener noreferrer">検索 ↗</a><button class="secondary" data-quick-shop="'+esc(name)+'">入力</button>'+(p?'<button class="danger" data-quick-delete="'+esc(p.id)+'">価格削除</button>':'')+((data.customOnlineShops||[]).some(x=>x.name===name)?'<button class="danger" data-custom-remove="'+esc(name)+'">サイト削除</button>':'')+'</td></tr>';
     }).join('')+'</tbody></table></div><p class="muted">最安表示は登録済みデータのみが対象です。送料未確認・在庫なしは最安判定から除外してください。</p>';
   target.querySelectorAll('[data-custom-remove]').forEach(btn=>btn.onclick=()=>{
     const name=btn.dataset.customRemove;
