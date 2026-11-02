@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id), KEY='cpf_v2';
 const defaults=['トレカプラザ55 大須アメ横店','カードラボ 名古屋大須店','ホビーステーション 名古屋大須本店','イエローサブマリン 名古屋GAME SHOP','GIRAFULL 名古屋大須店'];
 const uid=()=>crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random();
 let data=load(),editId=null,cardImage=null,cardFile=null,ocrBusy=false,scans=[];
-function load(){try{let d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.cards)&&Array.isArray(d.prices)){d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];d.shopMemos=Array.isArray(d.shopMemos)?d.shopMemos:[];d.customOnlineShops=Array.isArray(d.customOnlineShops)?d.customOnlineShops:[];return d}}catch(e){}return {cards:[],prices:[],shops:defaults.map((name,i)=>({id:'s'+i,name})),sold:[],shopMemos:[],customOnlineShops:[]}}
+function load(){try{let d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.cards)&&Array.isArray(d.prices)){d.shops=Array.isArray(d.shops)?d.shops:[];d.sold=Array.isArray(d.sold)?d.sold:[];d.shopMemos=Array.isArray(d.shopMemos)?d.shopMemos:[];d.customOnlineShops=Array.isArray(d.customOnlineShops)?d.customOnlineShops:[];d.xAccounts=Array.isArray(d.xAccounts)?d.xAccounts:[];return d}}catch(e){}return {cards:[],prices:[],shops:defaults.map((name,i)=>({id:'s'+i,name})),sold:[],shopMemos:[],customOnlineShops:[],xAccounts:[]}}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));render();return true}catch(e){alert('保存できませんでした。画像容量やSafariの保存領域をご確認ください。バックアップを推奨します。');return false}}
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const yen=n=>'¥'+Math.round(Number(n||0)).toLocaleString('ja-JP');
@@ -370,27 +370,45 @@ $('fetchAutoFeed').onclick=async()=>{
  finally{button.disabled=false}
 };
 
-// v2.8: X and Google search links only. No automatic collection or X API.
+// v2.8.1: account-specific X search; no X API, scraping, or image OCR.
 function renderRestockShops(){
  const el=$('restockShop');if(!el)return;
  const old=el.value;
- el.innerHTML=(data.shops||[]).map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join('');
- if((data.shops||[]).some(s=>s.id===old))el.value=old;
+ el.innerHTML=(data.xAccounts||[]).map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+' (@'+esc(s.handle)+')</option>').join('');
+ if((data.xAccounts||[]).some(s=>s.id===old))el.value=old;
+ const list=$('restockAccounts');
+ list.innerHTML=(data.xAccounts||[]).length?(data.xAccounts||[]).map(s=>'<div class="item row"><div><b>'+esc(s.name)+'</b><div class="muted">@'+esc(s.handle)+'</div></div><button type="button" class="danger" data-x-remove="'+esc(s.id)+'">削除</button></div>').join(''):'<p class="muted">Xアカウントは未登録です。</p>';
+ list.querySelectorAll('[data-x-remove]').forEach(b=>b.onclick=()=>{
+  if(!confirm('このXアカウントを削除しますか？'))return;
+  data.xAccounts=data.xAccounts.filter(x=>x.id!==b.dataset.xRemove);persist();
+ });
 }
-function restockQuery(){
- const c=getCard($('restockTarget').value),shop=(data.shops||[]).find(s=>s.id===$('restockShop').value);
+function restockQuery(images=false){
+ const c=getCard($('restockTarget').value),shop=(data.xAccounts||[]).find(s=>s.id===$('restockShop').value);
  if(!c||!shop)return null;
- const mode=$('restockTerm').value;
- const name=String(c.name||'').trim(),no=String(c.cardNo||'').trim();
- const term=mode==='number'?(no||name):mode==='both'?([name,no].filter(Boolean).join(' ')):(name||no);
- return [shop.name,term,'入荷',$('restockExclude').checked?'-買取 -買取表 -買取強化':''].filter(Boolean).join(' ');
+ const term=String(c.name||'').trim();if(!term)return null;
+ const now=new Date();const since=new Date(now);since.setMonth(since.getMonth()-1);
+ const date=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+ const until=new Date(now);until.setDate(until.getDate()+1);
+ return ['from:'+shop.handle,term,'-買取','since:'+date(since),'until:'+date(until),images?'filter:images':''].filter(Boolean).join(' ');
 }
-function renderRestockPreview(){const el=$('restockPreview');if(el)el.textContent='検索語：'+(restockQuery()||'カードと店舗を選択してください');}
-['restockTarget','restockShop','restockTerm','restockExclude'].forEach(id=>$(id).addEventListener('change',renderRestockPreview));
-function openRestock(engine){const q=restockQuery();if(!q)return alert('カードと店舗を登録してください');
- const url=engine==='x'?'https://x.com/search?q='+encodeURIComponent(q)+'&src=typed_query&f=live':'https://www.google.com/search?q='+encodeURIComponent('site:x.com '+q);
- window.open(url,'_blank','noopener,noreferrer');
+function renderRestockPreview(){const el=$('restockPreview');if(el)el.textContent='検索条件：'+(restockQuery()||'カードと登録済みXアカウントを選択してください');}
+['restockTarget','restockShop'].forEach(id=>$(id).addEventListener('change',renderRestockPreview));
+function openRestock(images){const q=restockQuery(images);if(!q)return alert('カードと店舗のXアカウントを登録・選択してください');
+ window.open('https://x.com/search?q='+encodeURIComponent(q)+'&src=typed_query&f=live','_blank','noopener,noreferrer');
 }
-$('restockX').onclick=()=>openRestock('x');
-$('restockGoogle').onclick=()=>openRestock('google');
-$('restockSettings').onclick=()=>tab('settings');
+$('restockX').onclick=()=>openRestock(false);
+$('restockImages').onclick=()=>openRestock(true);
+$('restockAdd').onclick=()=>{
+ const name=$('restockShopName').value.trim(),raw=$('restockShopHandle').value.trim();
+ let handle=raw.replace(/^@/,'');
+ if(/^https?:\/\//i.test(handle)){
+  try{const u=new URL(handle);if(!['x.com','www.x.com','twitter.com','www.twitter.com'].includes(u.hostname.toLowerCase()))throw Error();handle=u.pathname.split('/').filter(Boolean)[0]||''}catch(e){return alert('XのプロフィールURLを入力してください');}
+ }
+ handle=handle.replace(/^@/,'');
+ if(!name)return alert('店舗名を入力してください');
+ if(!/^[A-Za-z0-9_]{1,15}$/.test(handle))return alert('XのユーザーIDは英数字とアンダースコア15文字以内で入力してください');
+ if((data.xAccounts||[]).some(x=>x.handle.toLowerCase()===handle.toLowerCase()))return alert('このXアカウントは登録済みです');
+ data.xAccounts.push({id:uid(),name,handle});
+ if(persist()){$('restockShopName').value='';$('restockShopHandle').value='';$('restockShop').value=data.xAccounts[data.xAccounts.length-1].id;renderRestockPreview()}
+};
